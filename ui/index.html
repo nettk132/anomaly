@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Anomaly Detection – Frontend MVP</title>
+  <style>
+    :root { --bg:#0f1115; --panel:#171a21; --muted:#7f8aa3; --accent:#4ad6b8; --danger:#ff5d5d; --ok:#74d680; }
+    *{box-sizing:border-box} body{margin:0;background:var(--bg);color:#e9eef7;font-family:system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif}
+    header{padding:16px 20px;border-bottom:1px solid #222}
+    h1{font-size:20px;margin:0}
+    .wrap{display:grid;grid-template-columns:340px 1fr;gap:16px;padding:16px}
+    .card{background:var(--panel);border:1px solid #222;border-radius:12px;padding:14px}
+    .row{display:flex;gap:8px;align-items:center}
+    input[type=text], input[type=number]{width:100%;padding:8px 10px;border-radius:8px;border:1px solid #333;background:#0e1016;color:#e9eef7}
+    button{padding:8px 12px;border-radius:8px;border:1px solid #2a2f3a;background:#111520;color:#e9eef7;cursor:pointer}
+    button.primary{background:var(--accent);color:#0b1115;border-color:#2b8f80;font-weight:600}
+    button.warn{background:#2b1113;border-color:#61272c;color:#ffc9c9}
+    button:disabled{opacity:.5;cursor:not-allowed}
+    .muted{color:var(--muted);font-size:12px}
+    .drop{border:2px dashed #3a4254;border-radius:12px;padding:16px;text-align:center;background:#0e1118}
+    .thumbs{display:grid;grid-template-columns:repeat(3, 1fr);gap:8px;margin-top:10px;max-height:220px;overflow:auto}
+    .thumb{position:relative;border:1px solid #333;border-radius:10px;overflow:hidden}
+    .thumb img{display:block;width:100%;height:90px;object-fit:cover}
+    .thumb span{position:absolute;left:6px;bottom:6px;background:rgba(0,0,0,.55);padding:2px 6px;border-radius:6px;font-size:11px}
+    .canvas-wrap{position:relative;border:1px solid #333;border-radius:12px;overflow:hidden;background:#0c0e13}
+    canvas{display:block;width:100%;height:auto}
+    .toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+    code.block{display:block;white-space:pre-wrap;background:#0c0f15;border:1px solid #222;border-radius:10px;padding:8px;color:#bcd}
+    .stat{display:grid;grid-template-columns:1fr auto;gap:6px;font-size:13px}
+    progress{width:100%}
+    a.dl{color:#a8ffec}
+
+    /* เพิ่มสำหรับผลทดสอบ */
+    .results{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;max-height:360px;overflow:auto;margin-top:10px}
+    .result{border:1px solid #333;border-radius:10px;overflow:hidden;background:#0e1116}
+    .result img{display:block;width:100%;height:120px;object-fit:cover}
+    .result .meta{padding:8px;font-size:12px;display:grid;gap:4px}
+    .badge{display:inline-block;padding:2px 6px;border-radius:6px;font-weight:600}
+    .badge.ok{background:rgba(116,214,128,.15);color:var(--ok);border:1px solid rgba(116,214,128,.3)}
+    .badge.bad{background:rgba(255,93,93,.12);color:var(--danger);border:1px solid rgba(255,93,93,.3)}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>🧪 Anomaly Detection – Frontend MVP</h1>
+    <div class="muted">อัปโหลดรูปปกติ → (ถ้าต้องการ) ROI → กด Train → ดาวน์โหลด <code>model.pt</code> → <strong>ทดสอบโมเดล</strong></div>
+  </header>
+
+  <div class="wrap">
+    <!-- LEFT COLUMN -->
+    <section class="card">
+      <h3 style="margin-top:0">1) Dataset / Upload</h3>
+      <label class="muted">Scene ID / Dataset ID</label>
+      <input id="sceneId" type="text" placeholder="เช่น cam_park_01" />
+
+      <div style="height:10px"></div>
+      <div id="drop" class="drop" ondragover="event.preventDefault()">
+        <div>ลากรูปมาวางที่นี่ หรือ <input id="fileInput" type="file" accept="image/*" multiple /></div>
+        <div class="muted">รองรับ .jpg/.png หลายไฟล์</div>
+      </div>
+      <div class="toolbar">
+        <button id="btnUpload" class="primary">อัปโหลดไปแบ็กเอนด์</button>
+        <button id="btnClearFiles">ล้างรายการ</button>
+      </div>
+      <div id="fileCount" class="muted">ยังไม่มีไฟล์</div>
+      <div id="thumbs" class="thumbs"></div>
+
+      <hr style="border:none;border-top:1px solid #2a2f3a;margin:14px 0" />
+      <h3 style="margin:0">2) Train parameters</h3>
+      <div class="row">
+        <label class="muted" style="width:120px">img_size</label>
+        <input id="imgSize" type="number" value="256" min="64" step="32" />
+      </div>
+      <div class="row">
+        <label class="muted" style="width:120px">epochs</label>
+        <input id="epochs" type="number" value="30" min="1" step="1" />
+      </div>
+      <div class="row">
+        <label class="muted" style="width:120px">learning_rate</label>
+        <input id="lr" type="number" value="0.0001" step="0.0001" />
+      </div>
+      <div class="toolbar">
+        <button id="btnTrain" class="primary">เริ่ม Train</button>
+      </div>
+      <div id="trainMsg" class="muted"></div>
+
+      <hr style="border:none;border-top:1px solid #2a2f3a;margin:14px 0" />
+      <h3 style="margin:0">3) Job status</h3>
+      <div class="stat"><span>job_id</span><code id="jobId">-</code></div>
+      <div class="stat"><span>สถานะ</span><code id="jobStatus">-</code></div>
+      <div class="stat"><span>ความคืบหน้า</span><span style="min-width:120px"><progress id="jobProg" value="0" max="1"></progress></span></div>
+      <div class="stat"><span>model_id</span><code id="modelId">-</code></div>
+      <div class="toolbar">
+        <button id="btnPoll">อัปเดตสถานะ</button>
+        <a id="btnDownload" class="dl" href="#" download style="display:none">ดาวน์โหลด model.pt</a>
+      </div>
+
+      <hr style="border:none;border-top:1px solid #2a2f3a;margin:14px 0" />
+      <h3 style="margin:0">4) Test model (Inference)</h3>
+      <div class="muted">เลือกรูปตัวอย่าง แล้วกดทดสอบ — ระบบจะใช้ <code>model_id</code> จากด้านบน</div>
+      <div class="row">
+        <input id="testInput" type="file" accept="image/*" multiple />
+        <button id="btnTest" class="primary">ทดสอบโมเดล</button>
+      </div>
+      <div id="testMsg" class="muted"></div>
+      <div id="testResults" class="results"></div>
+    </section>
+
+    <!-- RIGHT COLUMN -->
+    <section class="card">
+      <h3 style="margin-top:0">ROI (ทางเลือก) – วาดเฉพาะถ้าต้องการจำกัดพื้นที่ตรวจ</h3>
+      <div class="muted">คลิกเพื่อเพิ่มจุด • ดับเบิลคลิกเพื่อปิดรูป • ปุ่ม Clear เพื่อล้าง</div>
+      <div class="canvas-wrap">
+        <canvas id="canvas" width="960" height="540"></canvas>
+      </div>
+      <div class="toolbar">
+        <button id="btnClearRoi" class="warn">Clear ROI</button>
+        <button id="btnSaveRoi" class="primary">บันทึก ROI</button>
+        <span id="roiMsg" class="muted"></span>
+      </div>
+      <details style="margin-top:8px">
+        <summary class="muted">ดีบัก</summary>
+        <code id="dbg" class="block"></code>
+      </details>
+    </section>
+  </div>
+
+  <script>
+  // --- CONFIG ---
+  const API_BASE = 'http://localhost:8000'; // แก้ให้ตรงกับแบ็กเอนด์
+  // endpoints ที่คาดหวัง:
+  // POST   /datasets/{scene_id}/upload      (multipart: files[])
+  // POST   /scenes/{scene_id}/roi           (JSON: {image_size:[H,W], polygon:[[x,y],...]})
+  // POST   /train                           (JSON: {scene_id, img_size, epochs, lr}) -> {job_id}
+  // GET    /jobs/{job_id}                   -> {status, progress, model_id?}
+  // GET    /models/{model_id}/download      (ไฟล์ .pt)
+  // POST   /models/{model_id}/test          (multipart: files[]) -> {items:[{filename, score, threshold, is_anomaly, result_image, heatmap_image}]}
+
+  // --- STATE ---
+  let files = [];               // File[] ที่ผู้ใช้อัปโหลด (dataset)
+  let activeImgUrl = null;      // preview ใน canvas
+  const points = [];            // โพลิกอน ROI [ {x,y}, ... ]
+  let closed = false;
+  let jobTimer = null;
+
+  // --- DOM ---
+  const el = (id)=>document.getElementById(id);
+  const sceneId = el('sceneId');
+  const fileInput = el('fileInput');
+  const drop = el('drop');
+  const thumbs = el('thumbs');
+  const fileCount = el('fileCount');
+  const btnUpload = el('btnUpload');
+  const btnClearFiles = el('btnClearFiles');
+  const btnTrain = el('btnTrain');
+  const trainMsg = el('trainMsg');
+  const jobIdEl = el('jobId');
+  const jobStatus = el('jobStatus');
+  const jobProg = el('jobProg');
+  const modelIdEl = el('modelId');
+  const btnPoll = el('btnPoll');
+  const btnDownload = el('btnDownload');
+
+  const imgSize = el('imgSize');
+  const epochs = el('epochs');
+  const lr = el('lr');
+
+  const canvas = el('canvas');
+  const ctx = canvas.getContext('2d');
+  const btnClearRoi = el('btnClearRoi');
+  const btnSaveRoi = el('btnSaveRoi');
+  const roiMsg = el('roiMsg');
+  const dbg = el('dbg');
+
+  // ใหม่สำหรับ test
+  const testInput = el('testInput');
+  const btnTest = el('btnTest');
+  const testMsg = el('testMsg');
+  const testResults = el('testResults');
+
+  // --- Helpers ---
+  function setDownload(modelId){
+    if(!modelId){ btnDownload.style.display='none'; return; }
+    btnDownload.href = `${API_BASE}/models/${modelId}/download`;
+    btnDownload.style.display='inline-block';
+  }
+  function toStaticUrl(p){
+    if(!p) return null;
+    const rel = p.replace(/^data[\\/]/,'').replace(/\\/g,'/');
+    return `${API_BASE}/static/${rel}`;
+  }
+
+  function updateThumbs(){
+    thumbs.innerHTML = '';
+    files.forEach((f,i)=>{
+      const url = URL.createObjectURL(f);
+      const div = document.createElement('div');
+      div.className='thumb';
+      div.innerHTML = `<img src="${url}"><span>${i+1}</span>`;
+      div.onclick = ()=> loadToCanvas(url);
+      thumbs.appendChild(div);
+    });
+    fileCount.textContent = files.length ? `เลือกรูป ${files.length} ไฟล์` : 'ยังไม่มีไฟล์';
+    if(files[0] && !activeImgUrl){ loadToCanvas(URL.createObjectURL(files[0])); }
+  }
+
+  function loadToCanvas(url){
+    activeImgUrl = url; points.length=0; closed=false; draw();
+    const img = new Image(); img.onload=()=>{
+      // fit into canvas (letterbox)
+      const scale = Math.min(canvas.width/img.width, canvas.height/img.height);
+      const w = img.width*scale, h = img.height*scale;
+      const x = (canvas.width - w)/2, y = (canvas.height - h)/2;
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      ctx.fillStyle='#0b0e13'; ctx.fillRect(0,0,canvas.width,canvas.height);
+      ctx.drawImage(img, x,y,w,h);
+      canvas.__imgMeta = {x,y,w,h,scale,origW:img.width,origH:img.height};
+      draw();
+    }; img.src=url;
+  }
+
+  function canvasToImageXY(cx, cy){
+    const m = canvas.__imgMeta; if(!m) return null;
+    if(cx<m.x||cy<m.y||cx>m.x+m.w||cy>m.y+m.h) return null; // outside image
+    const ix = (cx - m.x)/m.w * m.origW;
+    const iy = (cy - m.y)/m.h * m.origH;
+    return {x: Math.round(ix), y: Math.round(iy)};
+  }
+
+  function imageToCanvasXY(ix, iy){
+    const m = canvas.__imgMeta; if(!m) return null;
+    const cx = m.x + (ix/m.origW)*m.w;
+    const cy = m.y + (iy/m.origH)*m.h;
+    return {x: cx, y: cy};
+  }
+
+  function draw(){
+    const m = canvas.__imgMeta; if(m && activeImgUrl){
+      const img = new Image(); img.onload=()=>{
+        ctx.clearRect(0,0,canvas.width,canvas.height);
+        ctx.fillStyle='#0b0e13'; ctx.fillRect(0,0,canvas.width,canvas.height);
+        ctx.drawImage(img, m.x,m.y,m.w,m.h);
+        if(points.length){
+          ctx.lineWidth=2; ctx.strokeStyle= closed?'#4ad6b8':'#ffd166';
+          ctx.fillStyle = 'rgba(74,214,184,0.15)';
+          ctx.beginPath();
+          const p0 = imageToCanvasXY(points[0].x, points[0].y);
+          ctx.moveTo(p0.x, p0.y);
+          for(let i=1;i<points.length;i++){
+            const p = imageToCanvasXY(points[i].x, points[i].y);
+            ctx.lineTo(p.x, p.y);
+          }
+          if(closed){ ctx.closePath(); ctx.fill(); }
+          ctx.stroke();
+          points.forEach(pt=>{
+            const p = imageToCanvasXY(pt.x, pt.y);
+            ctx.fillStyle='#e9eef7'; ctx.beginPath(); ctx.arc(p.x,p.y,3,0,Math.PI*2); ctx.fill();
+          });
+        }
+      }; img.src = activeImgUrl;
+    }
+  }
+
+  function renderTestResults(items){
+    testResults.innerHTML = '';
+    if(!items || !items.length){
+      testResults.innerHTML = '<div class="muted">ไม่มีผลลัพธ์</div>';
+      return;
+    }
+    items.forEach(it=>{
+      const div = document.createElement('div');
+      div.className = 'result';
+      const imgUrl = toStaticUrl(it.result_image) || toStaticUrl(it.heatmap_image);
+      const badge = it.is_anomaly
+        ? '<span class="badge bad">ANOMALY</span>'
+        : '<span class="badge ok">NORMAL</span>';
+      div.innerHTML = `
+        <img src="${imgUrl || ''}" alt="">
+        <div class="meta">
+          <div>${badge} <strong>${it.filename}</strong></div>
+          <div>score: ${Number(it.score).toFixed(4)} • thr: ${Number(it.threshold).toFixed(4)}</div>
+          ${imgUrl ? `<a class="dl" href="${imgUrl}" target="_blank">เปิดภาพผลลัพธ์</a>` : ''}
+        </div>`;
+      testResults.appendChild(div);
+    });
+  }
+
+  // --- Events ---
+  fileInput.addEventListener('change', (e)=>{ files = Array.from(e.target.files||[]); updateThumbs(); });
+  drop.addEventListener('drop', (e)=>{ e.preventDefault(); files = files.concat(Array.from(e.dataTransfer.files||[])); updateThumbs(); });
+  btnClearFiles.onclick = ()=>{ files=[]; updateThumbs(); };
+
+  canvas.addEventListener('click', (e)=>{
+    if(!canvas.__imgMeta) return; if(closed) return;
+    const rect = canvas.getBoundingClientRect();
+    const pt = canvasToImageXY(e.clientX-rect.left, e.clientY-rect.top);
+    if(pt){ points.push(pt); draw(); }
+  });
+  canvas.addEventListener('dblclick', ()=>{ if(points.length>=3){ closed=true; draw(); }});
+
+  btnClearRoi.onclick = ()=>{ points.length=0; closed=false; draw(); roiMsg.textContent=''; };
+
+  btnSaveRoi.onclick = async ()=>{
+    const scene = sceneId.value.trim();
+    if(!scene) return alert('กรอก Scene ID ก่อน');
+    if(points.length<3 || !closed) return alert('วาดโพลิกอนให้ปิดรูปร่างก่อน');
+    const m = canvas.__imgMeta; if(!m) return alert('ยังไม่มีภาพสำหรับอ้างอิง');
+    const payload = { image_size:[m.origH, m.origW], polygon: points.map(p=>[p.x,p.y]) };
+    roiMsg.textContent = 'กำลังบันทึก ROI...';
+    try{
+      const res = await fetch(`${API_BASE}/scenes/${encodeURIComponent(scene)}/roi`, {
+        method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)
+      });
+      if(!res.ok) throw new Error(await res.text());
+      roiMsg.textContent = '✅ บันทึก ROI แล้ว';
+      dbg.textContent = JSON.stringify(payload, null, 2);
+    }catch(err){
+      roiMsg.textContent = '❌ บันทึกไม่สำเร็จ'; console.error(err);
+      alert('บันทึก ROI ไม่สำเร็จ: '+err.message);
+    }
+  };
+
+  btnUpload.onclick = async ()=>{
+    const scene = sceneId.value.trim();
+    if(!scene) return alert('กรอก Scene ID ก่อน');
+    if(!files.length) return alert('ยังไม่มีไฟล์');
+    const fd = new FormData();
+    files.forEach(f=> fd.append('files', f, f.name));
+    btnUpload.disabled = true; btnUpload.textContent='อัปโหลด…';
+    try{
+      const res = await fetch(`${API_BASE}/datasets/${encodeURIComponent(scene)}/upload`, { method:'POST', body:fd });
+      const js = await res.json().catch(()=>({}));
+      if(!res.ok) throw new Error(js.detail||res.statusText);
+      alert('อัปโหลดสำเร็จ');
+    }catch(err){
+      console.error(err); alert('อัปโหลดล้มเหลว: '+err.message);
+    }finally{ btnUpload.disabled=false; btnUpload.textContent='อัปโหลดไปแบ็กเอนด์'; }
+  };
+
+  btnTrain.onclick = async ()=>{
+    const scene = sceneId.value.trim();
+    if(!scene) return alert('กรอก Scene ID ก่อน');
+    trainMsg.textContent = 'ส่งงานเทรน...'; setDownload(null);
+    try{
+      const payload = { scene_id: scene, img_size: parseInt(imgSize.value||256), epochs: parseInt(epochs.value||30), lr: parseFloat(lr.value||0.0001) };
+      const res = await fetch(`${API_BASE}/train`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
+      const js = await res.json();
+      if(!res.ok) throw new Error(js.detail||res.statusText);
+      jobIdEl.textContent = js.job_id || '-'; jobStatus.textContent = 'queued'; jobProg.value = 0; modelIdEl.textContent='-';
+      trainMsg.textContent = 'รับงานแล้ว';
+      if(jobTimer) clearInterval(jobTimer);
+      jobTimer = setInterval(pollStatus, 2500);
+    }catch(err){
+      console.error(err); trainMsg.textContent = 'ส่งงานไม่สำเร็จ: '+err.message;
+    }
+  };
+
+  btnPoll.onclick = ()=> pollStatus();
+
+  async function pollStatus(){
+    const id = jobIdEl.textContent.trim(); if(!id || id==='-') return;
+    try{
+      const res = await fetch(`${API_BASE}/jobs/${encodeURIComponent(id)}`);
+      const js = await res.json();
+      if(!res.ok) throw new Error(js.detail||res.statusText);
+      jobStatus.textContent = js.status || '-';
+      jobProg.value = js.progress ?? 0;
+      if(js.model_id){ modelIdEl.textContent = js.model_id; setDownload(js.model_id); }
+      if(['finished','failed','canceled','error'].includes((js.status||'').toLowerCase())){
+        if(jobTimer) clearInterval(jobTimer);
+      }
+    }catch(err){ console.error(err); }
+  }
+
+  // ปุ่มทดสอบโมเดล
+  btnTest.onclick = async ()=>{
+    const mid = modelIdEl.textContent.trim();
+    if(!mid || mid === '-') return alert('ยังไม่มี model_id (กรุณา Train ก่อน หรือระบุ model_id)');
+    const up = testInput.files ? Array.from(testInput.files) : [];
+    if(!up.length) return alert('เลือกรูปทดสอบก่อน');
+
+    const fd = new FormData();
+    up.forEach(f => fd.append('files', f, f.name));
+
+    btnTest.disabled = true;
+    testMsg.textContent = 'กำลังทดสอบ…';
+    try{
+      const res = await fetch(`${API_BASE}/models/${encodeURIComponent(mid)}/test`, { method:'POST', body: fd });
+      const js = await res.json();
+      if(!res.ok) throw new Error(js.detail || res.statusText);
+      renderTestResults(js.items);
+      testMsg.textContent = `สำเร็จ: ${js.items.length} รูป`;
+    }catch(err){
+      console.error(err);
+      testMsg.textContent = '❌ ทดสอบไม่สำเร็จ: '+err.message;
+      alert('ทดสอบไม่สำเร็จ: '+err.message);
+    }finally{
+      btnTest.disabled = false;
+    }
+  };
+
+  // boot
+  sceneId.value = 'cam_park_01';
+  </script>
+</body>
+</html>

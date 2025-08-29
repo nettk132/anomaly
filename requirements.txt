@@ -1,0 +1,15 @@
+fastapi==0.112.2
+uvicorn[standard]==0.30.6
+python-multipart==0.0.9
+pydantic==2.8.2
+pydantic-settings==2.4.0
+numpy==1.26.4
+opencv-python-headless==4.10.0.84
+Pillow==10.4.0
+PyYAML==6.0.2
+transformers>=4.44
+
+# ติดตั้ง torch ตามระบบของคุณ แนะนำตามหน้า PyTorch official
+# Install torch/torchvision per your platform:
+# CPU only example (may need to adjust versions):
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu

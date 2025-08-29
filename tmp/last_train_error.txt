@@ -1,0 +1,6 @@
+DINO backbone cannot be loaded. ตรวจสอบ: 1) ติดตั้ง transformers/torchvision/safetensors, 2) อินเทอร์เน็ต/สิทธิ์ดาวน์โหลด, 3) ตั้ง DINO_LOCAL_DIR เป็นโฟลเดอร์โมเดลโลคัล หรือ login HF. ต้นเหตุ: OSError: You are trying to access a gated repo.
+Make sure to have access to it at https://huggingface.co/facebook/dinov3-vits16-pretrain-lvd1689m.
+401 Client Error. (Request ID: Root=1-68b0002a-3d84a6a579657dad75eb5300;8ef6f09a-204b-4f6a-842c-dac1644d9dbe)
+
+Cannot access gated repo for url https://huggingface.co/facebook/dinov3-vits16-pretrain-lvd1689m/resolve/main/config.json.
+Access to model facebook/dinov3-vits16-pretrain-lvd1689m is restricted. You must have access to it and be authenticated to access it. Please log in.

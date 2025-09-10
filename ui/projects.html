@@ -1,0 +1,202 @@
+<!-- ui/projects.html -->
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <link rel="icon" href="/ui/favicon.ico?v=1">
+  <meta charset="UTF-8" />
+  <title>Project List - Anomaly Detection</title>
+  <style>
+    /* ใช้ธีมสีเดียวกับ index.html */
+    :root { --bg:#0f1115; --panel:#171a21; --muted:#7f8aa3; --accent:#4ad6b8; --danger:#ff5d5d; }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:#e9eef7;font-family:system-ui,-apple-system,Segoe UI,Roboto}
+    header{padding:16px 20px;border-bottom:1px solid #222;display:flex;justify-content:space-between;align-items:center}
+    h1{font-size:20px;margin:0}
+    .container{padding:20px;display:grid;gap:16px}
+    .controls{display:flex;gap:8px;align-items:center}
+    .controls input{padding:8px 10px;border-radius:8px;border:1px solid #333;background:#0e1016;color:#e9eef7;}
+    .controls button{padding:8px 12px;border-radius:8px;border:1px solid #2a2f3a;background:#111520;color:#e9eef7;cursor:pointer}
+    .controls button.primary{background:var(--accent);color:#0b1115;border-color:#2b8f80;font-weight:600}
+    .list{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:20px}
+    .card{background:var(--panel);border:1px solid #222;border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:10px;position:relative}
+    .card h3{margin:0;font-size:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .card p{margin:0;color:var(--muted);font-size:13px;line-height:1.4;min-height:36px}
+    .badge{display:inline-block;background:#0e1016;border:1px solid #333;border-radius:8px;padding:2px 6px;font-size:11px;color:var(--muted)}
+    .actions{display:flex;gap:6px;margin-top:auto}
+    .actions button{flex:1;padding:6px;border-radius:8px;border:1px solid #2a2f3a;background:#111520;color:#e9eef7;cursor:pointer;font-size:12px}
+    .actions button.primary{background:var(--accent);color:#0b1115;font-weight:600}
+    .actions button.danger{background:var(--danger);color:#ffecec}
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Projects</h1>
+  <button class="primary" id="newProjectBtn">+ New Project</button>
+</header>
+
+<div class="container">
+  <div class="controls">
+    <input type="text" id="searchInput" placeholder="Search projects..." />
+  </div>
+  <div class="list" id="projectList"></div>
+</div>
+
+<!-- Modal สำหรับสร้างโปรเจ็กต์ใหม่ -->
+<div id="modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);align-items:center;justify-content:center;">
+  <div style="background:#171a21;padding:20px;border-radius:12px;min-width:300px;max-width:400px;">
+    <h3>New Project</h3>
+    <input id="projName" placeholder="Project name" style="width:100%;margin-top:10px;padding:8px;border-radius:8px;border:1px solid #333;background:#0e1016;color:#e9eef7;" />
+    <input id="projDesc" placeholder="Description (optional)" style="width:100%;margin-top:10px;padding:8px;border-radius:8px;border:1px solid #333;background:#0e1016;color:#e9eef7;" />
+    <div style="display:flex;gap:10px;margin-top:16px;">
+      <button id="createBtn" class="primary" style="flex:1;">Create</button>
+      <button id="cancelBtn" style="flex:1;">Cancel</button>
+    </div>
+  </div>
+
+</div>
+
+  <!-- Delete Confirm Modal -->
+<div id="deleteModal"
+     style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);align-items:center;justify-content:center;">
+  <div style="background:#171a21;padding:20px;border-radius:12px;min-width:320px;max-width:460px;">
+    <h3 style="margin:0 0 8px 0;">Delete project</h3>
+    <p style="margin:0 0 12px 0;color:#ffb3b3;">
+      การลบนี้เป็นการลบถาวร ไม่สามารถกู้คืนได้
+    </p>
+    <p id="delProjectName" style="margin:0 0 12px 0;color:#e9eef7;"></p>
+    <p style="margin:0 0 8px 0;color:#7f8aa3;font-size:13px;">
+      พิมพ์ <b id="delProjectNameInline"></b> เพื่อยืนยัน
+    </p>
+    <input id="delConfirmInput" placeholder="พิมพ์ชื่อโปรเจกต์ให้ตรง"
+           style="width:100%;margin-top:6px;padding:8px;border-radius:8px;border:1px solid #333;background:#0e1016;color:#e9eef7;" />
+    <div style="display:flex;gap:10px;margin-top:16px;">
+      <button id="delCancelBtn" style="flex:1;">Cancel</button>
+      <button id="delConfirmBtn" class="danger" style="flex:1;background:#ff5d5d;color:#ffecec;border:1px solid #7a1f1f;" disabled>
+        Delete permanently
+      </button>
+    </div>
+  </div>
+</div>
+
+
+<script>
+const API_BASE = ''; // เรียก /projects ตรงกับ main.py
+
+const modal = document.getElementById('modal');
+document.getElementById('newProjectBtn').onclick = () => { modal.style.display='flex'; };
+document.getElementById('cancelBtn').onclick = () => { modal.style.display='none'; };
+
+document.getElementById('createBtn').onclick = async () => {
+  const name = document.getElementById('projName').value.trim();
+  const description = document.getElementById('projDesc').value.trim();
+  if (!name) return alert('Please enter project name');
+  try {
+    const res = await fetch(API_BASE + '/projects', {
+      method:'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({name, description})
+    });
+    if (!res.ok) throw new Error(await res.text());
+    await res.json();
+    modal.style.display='none';
+    document.getElementById('projName').value='';
+    document.getElementById('projDesc').value='';
+    loadProjects();
+  } catch (e) {
+    alert('Error creating project: ' + e);
+  }
+};
+
+/* ---------- Delete confirm modal logic ---------- */
+const delModal = document.getElementById('deleteModal');
+const delNameEl = document.getElementById('delProjectName');
+const delNameInlineEl = document.getElementById('delProjectNameInline');
+const delInput = document.getElementById('delConfirmInput');
+const delCancelBtn = document.getElementById('delCancelBtn');
+const delConfirmBtn = document.getElementById('delConfirmBtn');
+
+let deleteState = { id: null, name: '' };
+
+function openDeleteModal(proj) {
+  deleteState = { id: proj.project_id, name: proj.name };
+  delNameEl.textContent = `คุณกำลังจะลบโปรเจกต์: "${proj.name}"`;
+  delNameInlineEl.textContent = `"${proj.name}"`;
+  delInput.value = '';
+  delConfirmBtn.disabled = true;
+  delModal.style.display = 'flex';
+  setTimeout(() => delInput.focus(), 0);
+}
+
+function closeDeleteModal() {
+  delModal.style.display = 'none';
+}
+
+delCancelBtn.onclick = closeDeleteModal;
+
+delInput.oninput = () => {
+  delConfirmBtn.disabled = (delInput.value !== deleteState.name);
+};
+
+delInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !delConfirmBtn.disabled) {
+    delConfirmBtn.click();
+  }
+});
+
+delConfirmBtn.onclick = async () => {
+  try {
+    // ถ้าคุณเสริมฝั่ง API ให้ตรวจชื่อด้วย query param 'confirm' ใช้บรรทัดด้านล่าง
+    const url = `${API_BASE}/projects/${encodeURIComponent(deleteState.id)}?confirm=${encodeURIComponent(deleteState.name)}`;
+    const res = await fetch(url, { method:'DELETE' });
+    if (!res.ok) {
+      const txt = await res.text();
+      throw new Error(txt || 'Delete failed');
+    }
+    closeDeleteModal();
+    loadProjects();
+  } catch (e) {
+    alert('Error deleting project: ' + e);
+  }
+};
+/* ---------- end delete confirm modal ---------- */
+
+async function loadProjects() {
+  try {
+    const res = await fetch(API_BASE + '/projects');
+    if (!res.ok) throw new Error(await res.text());
+    const projects = await res.json();
+    const list = document.getElementById('projectList');
+    const query = document.getElementById('searchInput').value.toLowerCase();
+    list.innerHTML='';
+    projects
+      .filter(p => p.name.toLowerCase().includes(query))
+      .forEach(proj => {
+        const div = document.createElement('div');
+        div.className='card';
+        div.innerHTML = `
+          <h3 title="${proj.name}">${proj.name}</h3>
+          <p>${proj.description || ''}</p>
+          <span class="badge">${proj.num_images} images</span>
+          <div class="actions">
+            <button class="primary">Open</button>
+            <button class="danger">Delete</button>
+          </div>
+        `;
+        div.querySelector('.primary').onclick = () => {
+          window.location.href = '/ui/index.html?projectId=' + encodeURIComponent(proj.project_id);
+        };
+        // ⬇️ เปลี่ยนจาก confirm() เป็น modal แบบ GitHub
+        div.querySelector('.danger').onclick = () => openDeleteModal(proj);
+        document.getElementById('projectList').appendChild(div);
+      });
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+document.getElementById('searchInput').oninput = loadProjects;
+window.onload = loadProjects;
+</script>
+</body>
+</html>

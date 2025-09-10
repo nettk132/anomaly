@@ -11,6 +11,7 @@ from ..config import (
     PROJECTS_DIR,
     ALLOWED_EXTS,
     MAX_FILES_PER_UPLOAD,
+    
 )
 
 # ---------- utils ----------
@@ -137,3 +138,55 @@ def save_project_uploads(
         saved += 1
 
     return saved
+
+def list_project_images(project_id: str) -> list[dict]:
+    raw = PROJECTS_DIR / project_id / "raw"
+    if not raw.exists():
+        return []
+    items = []
+    for p in raw.iterdir():
+        if p.is_file() and p.suffix.lower() in ALLOWED_EXTS:
+            items.append({
+                "filename": p.name,
+                "url": f"/static/projects/{project_id}/raw/{p.name}"
+            })
+    return items
+
+def list_scene_images(scene_id: str) -> list[dict]:
+    raw = get_raw_dir(scene_id)
+    if not raw.exists():
+        return []
+    items = []
+    for p in raw.iterdir():
+        if p.is_file() and p.suffix.lower() in ALLOWED_EXTS:
+            items.append({
+                "filename": p.name,
+                "url": f"/static/datasets/{scene_id}/raw/{p.name}"
+            })
+    return items
+
+
+def _validate_filename(name: str):
+    # กัน ../ หรือ โฟลเดอร์ย่อย และไฟล์ที่ไม่ใช่รูป
+    if not name or "/" in name or "\\" in name or name in (".", "..") or name.startswith("."):
+        raise ValueError("invalid filename")
+    if Path(name).suffix.lower() not in ALLOWED_EXTS:
+        raise ValueError("not an allowed image")
+
+def delete_project_image(project_id: str, filename: str) -> bool:
+    _validate_filename(filename)
+    raw = PROJECTS_DIR / project_id / "raw"
+    path = raw / filename
+    if path.is_file():
+        path.unlink()
+        return True
+    return False
+
+def delete_scene_image(scene_id: str, filename: str) -> bool:
+    _validate_filename(filename)
+    raw = get_raw_dir(scene_id)
+    path = raw / filename
+    if path.is_file():
+        path.unlink()
+        return True
+    return False

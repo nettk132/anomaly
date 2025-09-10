@@ -1,13 +1,13 @@
 from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional, Tuple
 
-
-
 class BaseSchema(BaseModel):
+    # กัน pydantic v2 เตือนเวลาใช้ชื่อ field ที่ชนกับ reserved prefix
     model_config = ConfigDict(protected_namespaces=())
-    
+
+# ---------- Training (scene mode) ----------
 class TrainRequest(BaseModel):
-    scene_id: str = Field(..., description="Dataset/scene identifier")
+    scene_id: str = Field(..., min_length=1, description="Dataset/scene identifier")
     img_size: int = 256
     epochs: int = 30
     lr: float = 1e-4
@@ -20,9 +20,10 @@ class JobStatus(BaseModel):
     progress: float = 0.0
     model_id: Optional[str] = None
     detail: Optional[str] = None
-    
+
+# ---------- Projects ----------
 class ProjectCreate(BaseModel):
-    name: str
+    name: str = Field(..., min_length=1)
     description: Optional[str] = None
 
 class ProjectInfo(BaseModel):
@@ -34,16 +35,17 @@ class ProjectInfo(BaseModel):
     last_model_id: Optional[str] = None
 
 class TrainProjectRequest(BaseModel):
-    project_id: str
+    # ไม่ต้องมี project_id ตรงนี้ เพราะส่งใน path: /projects/{project_id}/train
     img_size: int = 256
     epochs: int = 30
     lr: float = 1e-4
 
+# ---------- ROI ----------
 class RoiPayload(BaseModel):
     image_size: Tuple[int, int]  # (H, W)
     polygon: List[Tuple[int, int]]
 
-
+# ---------- Inference ----------
 class TestItem(BaseModel):
     filename: str
     score: Optional[float] = None
@@ -57,4 +59,3 @@ class TestItem(BaseModel):
 class TestResponse(BaseModel):
     model_id: str
     items: List[TestItem]
-    

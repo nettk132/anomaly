@@ -1,0 +1,7 @@
+device: cpu
+early_stopping_patience: 7
+epochs_run: 30
+img_size: 256
+loss: 0.7*MSE + 0.3*(1-SSIM)/2
+lr: 0.0001
+scene_id: cam_park_01

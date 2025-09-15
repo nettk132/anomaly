@@ -110,7 +110,8 @@ def test_images(model_id: str, models_root: Path, buf_list: List[Tuple[str, byte
     คืน list ของ dict:
     {
       filename, score, thr, is_anomaly,
-      image_url, heatmap_url, overlay_url
+      image_url, heatmap_url, overlay_url,
+      result_image, threshold  # alias รองรับ UI เดิม
     }
     URLs ชี้ไปที่ /static/preview/<model_id>/...
     """
@@ -121,10 +122,12 @@ def test_images(model_id: str, models_root: Path, buf_list: List[Tuple[str, byte
     if thr <= 1e-12:
         thr = _fallback_calibrate_threshold(scene_id, model, img_size, device)
 
-    # โฟลเดอร์พรีวิว (เสิร์ฟผ่าน /static)
-    DATA_DIR = DATASETS_DIR.parent             # data/
+    # ---- โฟลเดอร์พรีวิว (เสิร์ฟผ่าน /static) ----
+    # ใช้ preview ทั้งโฟลเดอร์และ URL เพื่อให้ตรงกัน
+    DATA_DIR   = DATASETS_DIR.parent  # data/
     preview_dir = DATA_DIR / "preview" / model_id
     preview_dir.mkdir(parents=True, exist_ok=True)
+    base_url = f"/static/preview/{model_id}"
 
     items = []
     with torch.no_grad():
@@ -132,11 +135,12 @@ def test_images(model_id: str, models_root: Path, buf_list: List[Tuple[str, byte
             arr = np.frombuffer(content, dtype=np.uint8)
             bgr = cv2.imdecode(arr, cv2.IMREAD_COLOR)
             if bgr is None:
-                # รูปพัง
                 items.append({
                     "filename": fname, "score": None, "thr": float(thr),
-                    "is_anomaly": None, "image_url": None,
-                    "heatmap_url": None, "overlay_url": None,
+                    "is_anomaly": None,
+                    "image_url": None, "heatmap_url": None, "overlay_url": None,
+                    "result_image": None,    # alias
+                    "threshold": float(thr), # alias
                     "error": "cannot decode image"
                 })
                 continue
@@ -145,32 +149,38 @@ def test_images(model_id: str, models_root: Path, buf_list: List[Tuple[str, byte
             xhat = model(x)
             diff_sq = (xhat - x) ** 2
 
-            # สกอร์ภาพ (MSE เฉลี่ย)
+            # คำนวณ score
             score = float(diff_sq.flatten(1).mean(1).item())
 
             # heatmap + overlay
-            hm = _heatmap_from_diff(diff_sq)
+            hm      = _heatmap_from_diff(diff_sq)
             overlay = _colorize_overlay(bgr, hm, alpha=0.45)
 
             # บันทึกไฟล์
-            stem = Path(fname).stem
-            out_img   = preview_dir / f"{stem}_input.jpg"
-            out_hm    = preview_dir / f"{stem}_heatmap.jpg"
-            out_ovr   = preview_dir / f"{stem}_overlay.jpg"
-            # เซฟต้นฉบับไว้ด้วย (เผื่อ UI อยากกดดู)
+            stem    = Path(fname).stem
+            out_img = preview_dir / f"{stem}_input.jpg"
+            out_hm  = preview_dir / f"{stem}_heatmap.jpg"
+            out_ovr = preview_dir / f"{stem}_overlay.jpg"
             cv2.imwrite(str(out_img), bgr)
-            cv2.imwrite(str(out_hm),  (hm*255).astype(np.uint8))
+            cv2.imwrite(str(out_hm),  (hm * 255).astype(np.uint8))
             cv2.imwrite(str(out_ovr), overlay)
 
-            base_url = f"/static/preview/{model_id}"
+            url_img = f"{base_url}/{stem}_input.jpg"
+            url_hm  = f"{base_url}/{stem}_heatmap.jpg"
+            url_ovr = f"{base_url}/{stem}_overlay.jpg"
+
             items.append({
                 "filename": fname,
                 "score": round(score, 6),
-                "thr":    float(thr),
+                "thr": float(thr),
                 "is_anomaly": bool(score > thr),
-                "image_url":   f"{base_url}/{stem}_input.jpg",
-                "heatmap_url": f"{base_url}/{stem}_heatmap.jpg",
-                "overlay_url": f"{base_url}/{stem}_overlay.jpg",
+                "image_url":   url_img,
+                "heatmap_url": url_hm,
+                "overlay_url": url_ovr,
+                # aliases สำหรับ UI เดิม:
+                "result_image": url_ovr,      # ใช้ overlay เป็นภาพหลัก
+                "threshold": float(thr),
             })
 
     return items
+

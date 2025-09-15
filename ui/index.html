@@ -599,6 +599,48 @@ function syncCanvasDPR() {
 }
 window.addEventListener('resize', syncCanvasDPR);
 window.addEventListener('load',   syncCanvasDPR);
+
+function toStaticUrl(p){
+  if (!p) return null;
+  // ถ้าแบ็กเอนด์ส่งมาเป็น "/static/preview/..." หรือเป็น URL เต็ม ให้ใช้ได้เลย
+  if (p.startsWith('/') || /^https?:\/\//i.test(p)) {
+    return `${API_BASE}${p}`;
+  }
+  // กรณีส่งมาเป็น path ใต้ data/
+  const rel = p.replace(/^data[\\/]/, '').replace(/\\/g, '/');
+  return `${API_BASE}/static/${rel}`;
+}
+
+function renderTestResults(items){
+  testResults.innerHTML = '';
+  if(!items || !items.length){
+    testResults.innerHTML = '<div class="muted">ไม่มีผลลัพธ์</div>';
+    return;
+  }
+  items.forEach(it=>{
+    const div = document.createElement('div');
+    div.className = 'result';
+
+    // เลือกภาพที่จะแสดง: overlay → heatmap → input
+    const rawUrl = it.overlay_url || it.heatmap_url || it.image_url || it.result_image || it.heatmap_image;
+    const imgUrl = toStaticUrl(rawUrl);
+    const thr    = (it.thr ?? it.threshold ?? 0);
+
+    const badge = it.is_anomaly
+      ? '<span class="badge bad">ANOMALY</span>'
+      : '<span class="badge ok">NORMAL</span>';
+
+    div.innerHTML = `
+      <img src="${imgUrl || ''}" alt="">
+      <div class="meta">
+        <div>${badge} <strong>${it.filename || ''}</strong></div>
+        <div>score: ${Number(it.score||0).toFixed(4)} • thr: ${Number(thr).toFixed(4)}</div>
+        ${imgUrl ? `<a class="dl" href="${imgUrl}" target="_blank">เปิดภาพผลลัพธ์</a>` : ''}
+      </div>`;
+    testResults.appendChild(div);
+  });
+}
+
 </script>
 
 </body>

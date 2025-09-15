@@ -17,6 +17,7 @@ from .schemas import (
     ProjectCreate, ProjectInfo, TrainProjectRequest,
 )
 from .config import DATASETS_DIR, MODELS_DIR, PROJECTS_DIR
+from .config import TMP_DIR
 from .services.storage import (
     save_uploads, get_raw_dir,
     save_project_uploads, get_project_raw_dir,
@@ -235,3 +236,5 @@ async def no_cache_ui(request, call_next):
         resp.headers["Pragma"] = "no-cache"
         resp.headers["Expires"] = "0"
     return resp
+
+app.mount("/tmp", StaticFiles(directory=str(TMP_DIR), html=False), name="tmp")

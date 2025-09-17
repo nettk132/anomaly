@@ -1,7 +1,6 @@
-data
+data/
 tmp
-_pycache__
+_pycache__/
 *.pyc
 *.pyo
 *.pyd
-__pycache__

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, ConfigDict
+﻿from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional, Tuple
 
 class BaseSchema(BaseModel):
@@ -40,6 +40,19 @@ class TrainProjectRequest(BaseModel):
     epochs: int = 30
     lr: float = 1e-4
 
+class ModelInfo(BaseModel):
+    model_id: str
+    mode: str
+    scene_id: Optional[str] = None
+    project_id: Optional[str] = None
+    created_at: Optional[str] = None
+    img_size: Optional[int] = None
+    epochs_run: Optional[int] = None
+    lr: Optional[float] = None
+    threshold: Optional[float] = None
+    note: Optional[str] = None
+    path: str
+
 # ---------- ROI ----------
 class RoiPayload(BaseModel):
     image_size: Tuple[int, int]  # (H, W)
@@ -54,9 +67,9 @@ class TestItem(BaseModel):
     image_url: Optional[str] = None
     heatmap_url: Optional[str] = None
     overlay_url: Optional[str] = None
+    bboxes: Optional[List[Tuple[int,int,int,int]]] = None  # [(x,y,w,h), ...]
     error: Optional[str] = None
 
 class TestResponse(BaseModel):
     model_id: str
     items: List[TestItem]
-    

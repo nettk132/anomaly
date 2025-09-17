@@ -9,6 +9,7 @@ import torch, torch.nn as nn
 import torch.nn.functional as F
 
 from ..models.autoencoder import ConvAE
+from .scoring import compute_anomaly_score
 from .dataset import make_loaders
 from ..config import MODELS_DIR, PROJECTS_DIR
 
@@ -64,12 +65,16 @@ def train_job(job, scene_id: str, raw_dir: Path, img_size: int, epochs: int, lr:
     train_loader, val_loader, _ = make_loaders(raw_dir, img_size=img_size)
 
     model = ConvAE().to(device)
-    opt = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=1e-5)
-    mse = nn.MSELoss(reduction='mean')
+    params = [p for p in model.parameters() if p.requires_grad]
+    if not params:
+        params = list(model.parameters())
+    opt = torch.optim.Adam(params, lr=lr, weight_decay=1e-5)
+    l1  = nn.L1Loss(reduction='mean')
     ssim = _AvgPoolSSIM(ksize=7).to(device)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=max(1, epochs))
 
     use_amp = (device == 'cuda')
-    scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
+    scaler = torch.amp.GradScaler('cuda', enabled=use_amp)
 
     # Early stopping
     best_val = float('inf'); best_state = None
@@ -85,10 +90,10 @@ def train_job(job, scene_id: str, raw_dir: Path, img_size: int, epochs: int, lr:
             x = x.to(device, non_blocking=True)
             opt.zero_grad(set_to_none=True)
 
-            with torch.cuda.amp.autocast(enabled=use_amp):
+            with torch.amp.autocast('cuda', enabled=use_amp):
                 xhat = model(x)
-                ssim_val = ssim(xhat.clamp(0,1), x.clamp(0,1))
-                loss = 0.7 * mse(xhat, x) + 0.3 * (1.0 - ssim_val.mean()) * 0.5
+                ssim_val = ssim(xhat.clamp(0,1), x.clamp(0,1))  # (N,)
+                loss = 0.7 * l1(xhat, x) + 0.3 * (1.0 - ssim_val.mean()) * 0.5
 
             scaler.scale(loss).backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
@@ -106,7 +111,7 @@ def train_job(job, scene_id: str, raw_dir: Path, img_size: int, epochs: int, lr:
                 x = x.to(device, non_blocking=True)
                 xhat = model(x)
                 ssim_val = ssim(xhat.clamp(0,1), x.clamp(0,1))
-                vloss = 0.7 * mse(xhat, x) + 0.3 * (1.0 - ssim_val.mean()) * 0.5
+                vloss = 0.7 * l1(xhat, x) + 0.3 * (1.0 - ssim_val.mean()) * 0.5
                 val_losses.append(float(vloss.item()))
         mean_val = float(np.mean(val_losses)) if val_losses else float('inf')
 
@@ -118,18 +123,27 @@ def train_job(job, scene_id: str, raw_dir: Path, img_size: int, epochs: int, lr:
             bad += 1
         if bad >= patience:
             break
+        # step scheduler per epoch
+        try:
+            scheduler.step()
+        except Exception:
+            pass
 
     if best_state is not None:
         model.load_state_dict(best_state)
 
     # ---- Calibrate threshold ----
     model.eval(); errs = []
+    ssim_cal = _AvgPoolSSIM(ksize=7).to(device)
     with torch.no_grad():
         for x in val_loader:
             x = x.to(device, non_blocking=True)
             xhat = model(x)
-            err = ((xhat - x) ** 2).flatten(1).mean(1)
-            errs.extend(err.detach().cpu().tolist())
+            abs_diff = torch.abs(xhat - x)
+            l1_per = abs_diff.flatten(1).mean(1)
+            ssim_val = ssim_cal(xhat.clamp(0,1), x.clamp(0,1))
+            score = compute_anomaly_score(abs_diff, ssim_val)
+            errs.extend(score.detach().cpu().tolist())
     errs = np.asarray(errs, dtype=np.float32)
     threshold = _robust_threshold(errs)
 
@@ -144,18 +158,21 @@ def train_job(job, scene_id: str, raw_dir: Path, img_size: int, epochs: int, lr:
         yaml.safe_dump(
             {
                 'scene_id': scene_id,
+                'created_at': ts,
                 'img_size': img_size,
                 'epochs_run': ep,
                 'lr': lr,
                 'device': device,
-                'loss': '0.7*MSE + 0.3*(1-SSIM)/2',
+                'loss': '0.7*L1 + 0.3*(1-SSIM)/2',
                 'early_stopping_patience': patience,
             },
             f, allow_unicode=True,
         )
 
     stats = {
-        'threshold_mse': float(threshold),
+        'threshold_mse': float(threshold),  # kept for compatibility
+        'threshold_score': float(threshold),
+        'score_type': '0.35*meanL1 + 0.35*top1%L1 + 0.15*(1-SSIM)',
         'val_size': int(errs.size),
         'val_err_mean': float(np.mean(errs)) if errs.size else None,
         'val_err_p99': float(np.percentile(errs, 99)) if errs.size else None,
@@ -163,7 +180,7 @@ def train_job(job, scene_id: str, raw_dir: Path, img_size: int, epochs: int, lr:
         'val_err_median': float(np.median(errs)) if errs.size else None,
         'val_err_mad': float(np.median(np.abs(errs - np.median(errs)))) if errs.size else None,
         'best_val_loss': float(best_val),
-        'note': 'threshold = max(P99.5, median + 3*1.4826*MAD) (ใช้ P99 ถ้า val เล็กมาก)',
+        'note': 'score=0.35*meanL1+0.35*top1%L1+0.15*(1-SSIM); thr=max(P99.5, median+3*1.4826*MAD)',
     }
     with open(out_dir / 'threshold.json', 'w', encoding='utf-8') as f:
         json.dump(stats, f, ensure_ascii=False, indent=2)
@@ -183,12 +200,16 @@ def train_job_project(job, project_id: str, raw_dir: Path, img_size: int, epochs
     train_loader, val_loader, _ = make_loaders(raw_dir, img_size=img_size)
 
     model = ConvAE().to(device)
-    opt = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=1e-5)
-    mse = nn.MSELoss(reduction='mean')
+    params = [p for p in model.parameters() if p.requires_grad]
+    if not params:
+        params = list(model.parameters())
+    opt = torch.optim.Adam(params, lr=lr, weight_decay=1e-5)
+    l1  = nn.L1Loss(reduction='mean')
     ssim = _AvgPoolSSIM(ksize=7).to(device)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=max(1, epochs))
 
     use_amp = (device == 'cuda')
-    scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
+    scaler = torch.amp.GradScaler('cuda', enabled=use_amp)
 
     best_val = float('inf'); best_state = None
     patience = max(5, epochs // 4); bad = 0
@@ -203,10 +224,10 @@ def train_job_project(job, project_id: str, raw_dir: Path, img_size: int, epochs
             x = x.to(device, non_blocking=True)
             opt.zero_grad(set_to_none=True)
 
-            with torch.cuda.amp.autocast(enabled=use_amp):
+            with torch.amp.autocast('cuda', enabled=use_amp):
                 xhat = model(x)
                 ssim_val = ssim(xhat.clamp(0,1), x.clamp(0,1))
-                loss = 0.7 * mse(xhat, x) + 0.3 * (1.0 - ssim_val.mean()) * 0.5
+                loss = 0.7 * l1(xhat, x) + 0.3 * (1.0 - ssim_val.mean()) * 0.5
 
             scaler.scale(loss).backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
@@ -224,7 +245,7 @@ def train_job_project(job, project_id: str, raw_dir: Path, img_size: int, epochs
                 x = x.to(device, non_blocking=True)
                 xhat = model(x)
                 ssim_val = ssim(xhat.clamp(0,1), x.clamp(0,1))
-                vloss = 0.7 * mse(xhat, x) + 0.3 * (1.0 - ssim_val.mean()) * 0.5
+                vloss = 0.7 * l1(xhat, x) + 0.3 * (1.0 - ssim_val.mean()) * 0.5
                 val_losses.append(float(vloss.item()))
         mean_val = float(np.mean(val_losses)) if val_losses else float('inf')
 
@@ -236,18 +257,26 @@ def train_job_project(job, project_id: str, raw_dir: Path, img_size: int, epochs
             bad += 1
         if bad >= patience:
             break
+        try:
+            scheduler.step()
+        except Exception:
+            pass
 
     if best_state is not None:
         model.load_state_dict(best_state)
 
     # ---- Calibrate threshold ----
     model.eval(); errs = []
+    ssim_cal = _AvgPoolSSIM(ksize=7).to(device)
     with torch.no_grad():
         for x in val_loader:
             x = x.to(device, non_blocking=True)
             xhat = model(x)
-            err = ((xhat - x) ** 2).flatten(1).mean(1)
-            errs.extend(err.detach().cpu().tolist())
+            abs_diff = torch.abs(xhat - x)
+            l1_per = abs_diff.flatten(1).mean(1)
+            ssim_val = ssim_cal(xhat.clamp(0,1), x.clamp(0,1))
+            score = compute_anomaly_score(abs_diff, ssim_val)
+            errs.extend(score.detach().cpu().tolist())
     errs = np.asarray(errs, dtype=np.float32)
     threshold = _robust_threshold(errs)
 
@@ -262,18 +291,32 @@ def train_job_project(job, project_id: str, raw_dir: Path, img_size: int, epochs
         yaml.safe_dump(
             {
                 'project_id': project_id,
+                'created_at': ts,
                 'img_size': img_size,
                 'epochs_run': ep,
                 'lr': lr,
                 'device': device,
-                'loss': '0.7*MSE + 0.3*(1-SSIM)/2',
+                'loss': '0.7*L1 + 0.3*(1-SSIM)/2',
                 'early_stopping_patience': patience,
             },
             f, allow_unicode=True,
         )
 
+    stats = {
+        'threshold_mse': float(threshold),
+        'threshold_score': float(threshold),
+        'score_type': '0.35*meanL1 + 0.35*top1%L1 + 0.15*(1-SSIM)',
+        'val_size': int(errs.size),
+        'val_err_mean': float(np.mean(errs)) if errs.size else None,
+        'val_err_p99': float(np.percentile(errs, 99)) if errs.size else None,
+        'val_err_p995': float(np.percentile(errs, 99.5)) if errs.size >= 50 else None,
+        'val_err_median': float(np.median(errs)) if errs.size else None,
+        'val_err_mad': float(np.median(np.abs(errs - np.median(errs)))) if errs.size else None,
+        'best_val_loss': float(best_val),
+        'note': 'score=0.35*meanL1+0.35*top1%L1+0.15*(1-SSIM); thr=max(P99.5, median+3*1.4826*MAD)',
+    }
     with open(out_dir / 'threshold.json', 'w', encoding='utf-8') as f:
-        json.dump({'threshold_mse': float(threshold), 'val_size': int(errs.size)}, f, ensure_ascii=False, indent=2)
+        json.dump(stats, f, ensure_ascii=False, indent=2)
 
     # อัปเดต meta โปรเจกต์ (ถ้ามีฟังก์ชัน)
     if callable(set_last_model):

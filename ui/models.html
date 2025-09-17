@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <link rel="icon" href="/ui/favicon.ico?v=1">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Model Browser - Anomaly Detection</title>
+  <style>
+    :root { --bg:#0f1115; --panel:#171a21; --muted:#7f8aa3; --accent:#4ad6b8; --danger:#ff5d5d; }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:#e9eef7;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,"Noto Sans",sans-serif;line-height:1.6}
+    a{color:inherit;text-decoration:none}
+
+    .app-header{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;padding:20px 28px;border-bottom:1px solid #222;background:linear-gradient(180deg,rgba(19,22,30,0.9),rgba(19,22,30,0.5))}
+    .header-main{display:flex;flex-direction:column;gap:6px}
+    .header-main h1{margin:0;font-size:22px}
+    .header-main p{margin:0;color:#c2c8d9;font-size:14px}
+    .header-actions{display:flex;flex-direction:column;gap:10px;align-items:flex-end}
+    .nav-links{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+    .nav-btn{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:10px;border:1px solid rgba(74,214,184,0.35);background:rgba(74,214,184,0.12);color:var(--accent);font-size:13px;font-weight:600;transition:background .2s ease,transform .1s ease}
+    .nav-btn:hover{background:rgba(74,214,184,0.22);transform:translateY(-1px)}
+
+    .page{padding:20px 28px;display:grid;gap:20px}
+    .info-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px}
+    .info-card{background:var(--panel);border:1px solid #1f2330;border-radius:14px;padding:16px 18px;box-shadow:0 12px 26px rgba(0,0,0,0.18)}
+    .info-card h3{margin:0 0 10px;font-size:16px}
+    .info-card p{margin:0;font-size:13px;color:#c6cede}
+    .summary{display:flex;gap:16px;font-size:13px;color:#c6cede}
+
+    .wrap{display:grid;grid-template-columns:minmax(300px,360px) 1fr;gap:18px;align-items:start}
+    .card{background:var(--panel);border:1px solid #1f2330;border-radius:14px;padding:16px 18px;box-shadow:0 16px 32px rgba(0,0,0,0.2)}
+    .card h3{margin-top:0;font-size:16px}
+
+    .toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:12px}
+    .toolbar input,.toolbar select{padding:8px 10px;border-radius:10px;border:1px solid #333;background:#0e1016;color:#e9eef7;font-size:13px}
+    .toolbar button{padding:8px 12px;border-radius:10px;border:1px solid #2a2f3a;background:#111520;color:#e9eef7;font-size:13px;cursor:pointer;transition:transform 0.1s ease}
+    .toolbar button:hover{transform:translateY(-1px)}
+
+    .model-list{display:grid;gap:8px;max-height:520px;overflow:auto}
+    .model-item{display:flex;flex-direction:column;gap:4px;padding:10px 12px;border-radius:12px;border:1px solid #2a2f3a;background:#111520;cursor:pointer;transition:border-color .2s ease,background .2s ease}
+    .model-item:hover{border-color:rgba(74,214,184,0.35)}
+    .model-item.active{border-color:var(--accent);background:rgba(74,214,184,0.14)}
+    .model-title{font-weight:600;font-size:14px}
+    .model-meta{display:flex;flex-wrap:wrap;gap:6px;font-size:12px;color:#c6cede}
+
+    .detail-grid{display:grid;gap:8px;font-size:13px}
+    .detail-row{display:flex;justify-content:space-between;gap:12px;background:rgba(255,255,255,0.03);padding:8px 12px;border-radius:10px}
+    .detail-label{color:var(--muted);min-width:110px}
+    .detail-value{font-weight:600;text-align:right}
+
+    .files{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0}
+    .files a{font-size:12px;color:#a8ffec}
+
+    .results{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;max-height:320px;overflow:auto;margin-top:10px}
+    .result{border:1px solid #333;border-radius:12px;background:#0e1116;overflow:hidden}
+    .result img{width:100%;height:120px;object-fit:cover}
+    .result .meta{padding:10px;font-size:12px;display:grid;gap:6px}
+    .badge{display:inline-block;padding:2px 6px;border-radius:6px;font-weight:600;font-size:11px}
+    .badge.ok{background:rgba(116,214,128,0.15);color:#74d680;border:1px solid rgba(116,214,128,0.25)}
+    .badge.bad{background:rgba(255,93,93,0.15);color:#ff5d5d;border:1px solid rgba(255,93,93,0.25)}
+
+    @media (max-width:960px){
+      .wrap{grid-template-columns:1fr}
+      .app-header{flex-direction:column;align-items:flex-start}
+      .header-actions{align-items:flex-start}
+    }
+  </style>
+</head>
+<body>
+<header class="app-header">
+  <div class="header-main">
+    <h1>Model repository</h1>
+    <p>Browse previously trained models, download artefacts, and run fresh inference.</p>
+  </div>
+  <div class="header-actions">
+    <div class="nav-links">
+      <a class="nav-btn" href="/ui/projects.html">Projects</a>
+    </div>
+    <button class="primary-btn" style="padding:8px 14px" id="reloadModels">Reload list</button>
+  </div>
+</header>
+
+<main class="page">
+  <section class="info-grid">
+    <div class="info-card">
+      <h3>How to use</h3>
+      <p>Select a model to view its metadata and run inference without retraining.</p>
+      <p>If you need to tweak training, jump back to the scene or project pages.</p>
+    </div>
+    <div class="info-card">
+      <h3>Overview</h3>
+      <div class="summary">
+        <span id="summaryTotal">Total models: 0</span>
+        <span id="summaryScene">Scene: 0</span>
+        <span id="summaryProject">Project: 0</span>
+      </div>
+    </div>
+  </section>
+
+  <div class="wrap">
+    <section class="card">
+      <h3>Model list</h3>
+      <div class="toolbar">
+        <input id="modelSearch" type="text" placeholder="Search by model ID, scene, or project" />
+        <select id="modeFilter">
+          <option value="all">All modes</option>
+          <option value="scene">Scene models</option>
+          <option value="project">Project models</option>
+        </select>
+      </div>
+      <div id="modelList" class="model-list"></div>
+    </section>
+
+    <section class="card">
+      <h3>Model details &amp; testing</h3>
+      <div id="modelPlaceholder" class="muted">Select a model from the list to view details.</div>
+      <div id="modelDetails" style="display:none;">
+        <div class="detail-grid" id="modelMeta"></div>
+        <div class="files">
+          <a id="downloadWeights" href="#" target="_blank">Download weights</a>
+          <a id="downloadConfig" href="#" target="_blank">Config</a>
+          <a id="downloadThreshold" href="#" target="_blank">Threshold</a>
+        </div>
+        <div class="muted">Run inference with new images</div>
+        <div class="toolbar" style="margin-top:8px;margin-bottom:6px;">
+          <input id="testInput" type="file" accept="image/*" multiple />
+          <button id="btnTest" class="primary">Run inference</button>
+        </div>
+        <div id="testMsg" class="muted"></div>
+        <div id="testResults" class="results"></div>
+      </div>
+    </section>
+  </div>
+</main>
+
+<script>
+const API_BASE = '';
+const modelListEl = document.getElementById('modelList');
+const modeFilterEl = document.getElementById('modeFilter');
+const searchEl = document.getElementById('modelSearch');
+const reloadBtn = document.getElementById('reloadModels');
+const placeholder = document.getElementById('modelPlaceholder');
+const detailsBox = document.getElementById('modelDetails');
+const metaGrid = document.getElementById('modelMeta');
+const testInput = document.getElementById('testInput');
+const btnTest = document.getElementById('btnTest');
+const testMsg = document.getElementById('testMsg');
+const testResults = document.getElementById('testResults');
+const summaryTotal = document.getElementById('summaryTotal');
+const summaryScene = document.getElementById('summaryScene');
+const summaryProject = document.getElementById('summaryProject');
+const downloadWeights = document.getElementById('downloadWeights');
+const downloadConfig = document.getElementById('downloadConfig');
+const downloadThreshold = document.getElementById('downloadThreshold');
+
+let allModels = [];
+let filteredModels = [];
+let selectedModelId = null;
+let lastTestCount = 0;
+
+function formatMode(mode){
+  return mode === 'project' ? 'Project' : 'Scene';
+}
+
+function formatCreated(str){
+  if (!str) return '-';
+  if (/^\d{8}-\d{6}$/.test(str)){
+    return `${str.slice(0,4)}-${str.slice(4,6)}-${str.slice(6,8)} ${str.slice(9,11)}:${str.slice(11,13)}:${str.slice(13,15)}`;
+  }
+  return str;
+}
+
+function updateSummary(){
+  const total = filteredModels.length;
+  const scene = filteredModels.filter(m => m.mode === 'scene').length;
+  const project = filteredModels.filter(m => m.mode === 'project').length;
+  summaryTotal.textContent = `Total models: ${total}`;
+  summaryScene.textContent = `Scene: ${scene}`;
+  summaryProject.textContent = `Project: ${project}`;
+}
+
+function renderModelList(){
+  modelListEl.innerHTML = '';
+  if (!filteredModels.length){
+    const empty = document.createElement('div');
+    empty.className = 'muted';
+    empty.textContent = 'No models found. Adjust filters or reload.';
+    modelListEl.appendChild(empty);
+    updateSummary();
+    return;
+  }
+  filteredModels.forEach(info => {
+    const item = document.createElement('div');
+    item.className = 'model-item' + (info.model_id === selectedModelId ? ' active' : '');
+    item.innerHTML = `
+      <div class="model-title">${info.model_id}</div>
+      <div class="model-meta">
+        <span>${formatMode(info.mode)}</span>
+        ${info.scene_id ? `<span>Scene: ${info.scene_id}</span>` : ''}
+        ${info.project_id ? `<span>Project: ${info.project_id}</span>` : ''}
+        ${info.created_at ? `<span>${formatCreated(info.created_at)}</span>` : ''}
+      </div>
+    `;
+    item.addEventListener('click', () => selectModel(info.model_id));
+    modelListEl.appendChild(item);
+  });
+  updateSummary();
+}
+
+function renderDetails(info){
+  selectedModelId = info.model_id;
+  placeholder.style.display = 'none';
+  detailsBox.style.display = 'block';
+  testResults.innerHTML = '';
+  testMsg.textContent = '';
+  metaGrid.innerHTML = '';
+  const rows = [
+    ['Model ID', info.model_id],
+    ['Mode', formatMode(info.mode)],
+    ['Scene ID', info.scene_id || '—'],
+    ['Project ID', info.project_id || '—'],
+    ['Created at', formatCreated(info.created_at)],
+    ['Image size', info.img_size ? `${info.img_size}px` : '—'],
+    ['Epochs run', info.epochs_run ?? '—'],
+    ['Learning rate', info.lr ?? '—'],
+    ['Threshold', info.threshold != null ? info.threshold.toFixed(6) : '—'],
+    ['Note', info.note || '—'],
+  ];
+  rows.forEach(([label, value]) => {
+    const row = document.createElement('div');
+    row.className = 'detail-row';
+    row.innerHTML = `<span class="detail-label">${label}</span><span class="detail-value">${value}</span>`;
+    metaGrid.appendChild(row);
+  });
+  downloadWeights.href = `${API_BASE}/models/${encodeURIComponent(info.model_id)}/download`;
+  const staticBase = `${API_BASE}/static/${info.path}`;
+  downloadConfig.href = `${staticBase}/config.yaml`;
+  downloadThreshold.href = `${staticBase}/threshold.json`;
+}
+
+function applyFilters(){
+  const mode = modeFilterEl.value;
+  const query = searchEl.value.trim().toLowerCase();
+  filteredModels = allModels.filter(info => {
+    if (mode !== 'all' && info.mode !== mode) return false;
+    if (!query) return true;
+    return [info.model_id, info.scene_id, info.project_id].some(val => val && val.toLowerCase().includes(query));
+  });
+  if (selectedModelId && !filteredModels.some(m => m.model_id === selectedModelId)){
+    selectedModelId = null;
+    detailsBox.style.display = 'none';
+    placeholder.style.display = 'block';
+  }
+  renderModelList();
+}
+
+async function loadModels(){
+  try{
+    const params = new URLSearchParams();
+    const mode = modeFilterEl.value;
+    if (mode !== 'all') params.set('mode', mode);
+    const url = params.toString() ? `${API_BASE}/models?${params}` : `${API_BASE}/models`;
+    reloadBtn.disabled = true;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(await res.text());
+    allModels = await res.json();
+    applyFilters();
+  }catch(err){
+    console.error(err);
+    alert('Failed to load models: ' + err.message);
+  }finally{
+    reloadBtn.disabled = false;
+  }
+}
+
+function selectModel(modelId){
+  const info = filteredModels.find(m => m.model_id === modelId);
+  if (!info) return;
+  renderDetails(info);
+  renderModelList();
+}
+
+async function runTest(){
+  if (!selectedModelId) return alert('Select a model first');
+  const files = testInput.files ? Array.from(testInput.files) : [];
+  if (!files.length) return alert('Choose image files for testing');
+  const fd = new FormData();
+  files.forEach(f => fd.append('files', f, f.name));
+  btnTest.disabled = true;
+  testMsg.textContent = 'Running inference...';
+  try{
+    const res = await fetch(`${API_BASE}/models/${encodeURIComponent(selectedModelId)}/test`, {
+      method: 'POST',
+      body: fd,
+    });
+    const js = await res.json();
+    if (!res.ok) throw new Error(js.detail || res.statusText);
+    renderTestResults(js.items || []);
+    testMsg.textContent = `Inference finished: ${js.items?.length || 0} image(s)`;
+  }catch(err){
+    console.error(err);
+    testMsg.textContent = '❌ Inference failed: ' + err.message;
+    alert('Inference failed: ' + err.message);
+    testResults.innerHTML = '';
+  }finally{
+    btnTest.disabled = false;
+    updateSummary();
+  }
+}
+
+function renderTestResults(items){
+  lastTestCount = Array.isArray(items) ? items.length : 0;
+  testResults.innerHTML = '';
+  if (!items || !items.length){
+    testResults.innerHTML = '<div class="muted">No results</div>';
+    updateSummary();
+    return;
+  }
+  items.forEach(it => {
+    const div = document.createElement('div');
+    div.className = 'result';
+    const rawUrl = it.overlay_url || it.heatmap_url || it.image_url || it.result_image || it.heatmap_image;
+    const imgUrl = rawUrl ? (rawUrl.startsWith('/') ? `${API_BASE}${rawUrl}` : rawUrl) : '';
+    const thr = it.thr ?? it.threshold ?? 0;
+    const badge = it.is_anomaly ? '<span class="badge bad">ANOMALY</span>' : '<span class="badge ok">NORMAL</span>';
+    div.innerHTML = `
+      <img src="${imgUrl || ''}" alt="">
+      <div class="meta">
+        <div>${badge} <strong>${it.filename || ''}</strong></div>
+        <div>score: ${Number(it.score || 0).toFixed(4)} | thr: ${Number(thr).toFixed(4)}</div>
+        ${imgUrl ? `<a class="dl" href="${imgUrl}" target="_blank">Open result</a>` : ''}
+      </div>`;
+    testResults.appendChild(div);
+  });
+  updateSummary();
+}
+
+reloadBtn.addEventListener('click', loadModels);
+modeFilterEl.addEventListener('change', () => { selectedModelId = null; applyFilters(); });
+searchEl.addEventListener('input', () => applyFilters());
+btnTest.addEventListener('click', runTest);
+
+loadModels();
+</script>
+</body>
+</html>

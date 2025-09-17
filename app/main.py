@@ -14,7 +14,7 @@ from fastapi import HTTPException
 from .schemas import (
     TrainRequest, TrainResponse, JobStatus, RoiPayload,
     TestResponse, TestItem,
-    ProjectCreate, ProjectInfo, TrainProjectRequest,
+    ProjectCreate, ProjectInfo, TrainProjectRequest, ModelInfo,
 )
 from .config import DATASETS_DIR, MODELS_DIR, PROJECTS_DIR
 from .config import TMP_DIR
@@ -26,6 +26,7 @@ from .services.jobs import JOBS
 from .services.training import train_job, train_job_project
 from .services.inference import test_images
 from .services.projects import create_project, list_projects, get_project
+from .services.models import list_models
 
 app = FastAPI(title=os.getenv("API_TITLE", "Anomaly Detection Backend"))
 
@@ -51,8 +52,8 @@ if DATA_DIR.exists():
 
 @app.get("/")
 def root():
-    # เปิด / แล้วพาไปหน้า UI ถ้ามี ไม่งั้นไป /docs
-    return RedirectResponse(url="/ui" if UI_DIR.exists() else "/docs")
+    # เปิด / แล้วพาไปหน้า projects UI ถ้ามี ไม่งั้นไป /docs
+    return RedirectResponse(url="/ui/projects.html" if UI_DIR.exists() else "/docs")
 
 @app.get("/favicon.ico")
 def favicon():
@@ -109,6 +110,13 @@ async def upload_project(project_id: str, files: List[UploadFile] = File(...)):
         raise HTTPException(status_code=400, detail="No valid images uploaded")
     return {"saved": count, "project_id": project_id}
 
+@app.get("/models", response_model=List[ModelInfo])
+def list_models_api(mode: str | None = None, project_id: str | None = None):
+    try:
+        return list_models(mode=mode, project_id=project_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
 @app.post("/projects/{project_id}/train", response_model=TrainResponse)
 async def train_project(project_id: str, req: TrainProjectRequest):
     """เทรนโมเดลสำหรับโปรเจกต์"""
@@ -132,6 +140,13 @@ async def job_status(job_id: str):
 @app.get("/models/{model_id}/download")
 def download_model(model_id: str):
     path = MODELS_DIR / model_id / "model.pt"
+    if not path.exists():
+        if PROJECTS_DIR.exists():
+            for proj_dir in PROJECTS_DIR.iterdir():
+                cand = proj_dir / "models" / model_id / "model.pt"
+                if cand.exists():
+                    path = cand
+                    break
     if not path.exists():
         raise HTTPException(status_code=404, detail="Model not found")
     return FileResponse(str(path), media_type="application/octet-stream", filename="model.pt")

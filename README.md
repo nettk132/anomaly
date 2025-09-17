@@ -1,24 +1,117 @@
-# Anomaly Detection Backend (MVP)
+# Anomaly Detection Backend
 
-FastAPI backend that ingests **normal** images, trains a simple **autoencoder** using PyTorch,
-tracks a background **job**, and lets you download the resulting `model.pt`.
+FastAPI backend that trains an anomaly-detection autoencoder on **normal** images and serves
+reconstruction-based scoring plus visual previews. The service supports both the legacy
+scene_id workflow and a newer project-centric flow with lightweight HTML pages under /ui.
 
-## Endpoints
-- `POST /datasets/{scene_id}/upload`  — upload multiple images (field name: `files`)
-- `POST /train` — start training job, returns `{ job_id }`
-- `GET /jobs/{job_id}` — poll job status `{ status, progress, model_id? }`
-- `GET /models/{model_id}/download` — download `model.pt`
+## Features
+- Upload normal samples (scene or project scope) and trigger background training jobs.
+- DINOv3 ConvNeXt-Tiny encoder + custom decoder autoencoder with SSIM-aware loss, AMP, and early stopping.
+- Automatic threshold calibration on validation data and downloadable model artifacts.
+- Inference endpoint returns anomaly scores, heatmaps, and overlay images with optional bounding boxes.
+- Simple job tracker (/jobs/{job_id}) and static file hosting for previews and saved models.
 
-> ROI endpoint is **optional** and not used by default, but stubbed as `/scenes/{scene_id}/roi` to avoid 404 from the sample frontend.
+## Requirements
+- Python 3.10 or newer (tested on 3.11).
+- PyTorch 2.x with CUDA if you want GPU acceleration (CPU works but is slower).
+- DINOv3 ConvNeXt-Tiny weights file (dinov3_convnext_tiny_pretrain_lvd1689m-21b726bb.pth) placed in the repository root.
 
-## Quick start
+## Quick Start
+1. Create a virtual environment and install core dependencies:
+   ```bash
+   python -m venv .venv
+   # Windows
+   .venv\Scripts\activate
+   # macOS/Linux
+   source .venv/bin/activate
+
+   pip install --upgrade pip
+   pip install -r requirements.txt
+   ```
+2. Install the PyTorch stack that matches your platform/GPU. Examples:
+   ```bash
+   # CUDA 12.1 build
+   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+
+   # CPU-only build
+   pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+   ```
+3. Download the DINOv3 ConvNeXt-Tiny checkpoint from the official Meta research release
+   (requires accepting their license) and place it next to this README:
+   ```text
+   project-root/
+     dinov3_convnext_tiny_pretrain_lvd1689m-21b726bb.pth
+     app/
+     data/
+     ...
+   ```
+4. Launch the API:
+   ```bash
+   uvicorn app.main:app --reload --port 8000
+   ```
+5. Open http://localhost:8000/ui/projects.html (if the ui/ folder is present) or inspect
+   the OpenAPI docs at http://localhost:8000/docs.
+
+## Data Layout
+Uploads and training artifacts live under data/ (created automatically):
+- data/datasets/{scene_id}/raw/ - raw images for the legacy scene workflow.
+- data/projects/{project_id}/raw/ - raw images in the project workflow.
+- data/projects/{project_id}/models/{model_id}/ - model.pt, config.yaml, and threshold.json.
+- data/models/{model_id}/ - same artifacts for scene-based runs.
+- data/preview/{model_id}/ - generated previews (input, heatmap, overlay) from inference.
+
+## Training Workflows
+### Scene-based (legacy)
 ```bash
-python -m venv .venv && . .venv/bin/activate    # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-# Install torch per your OS: https://pytorch.org/get-started/locally/  (or the CPU index-url hint in requirements.txt)
-uvicorn app.main:app --reload --port 8000
+# Upload all "normal" images
+curl -X POST "http://localhost:8000/datasets/pump-01/upload" \
+     -F "files=@/path/image1.jpg" -F "files=@/path/image2.jpg"
+
+# Kick off training (returns job_id)
+curl -X POST "http://localhost:8000/train" \
+     -H "Content-Type: application/json" \
+     -d '{"scene_id":"pump-01","img_size":256,"epochs":30,"lr":1e-4}'
+
+# Poll progress
+curl http://localhost:8000/jobs/{job_id}
 ```
 
-Place uploads will be stored under `data/datasets/{scene_id}/raw/`.
+### Project-based
+```bash
+# Create a project (name is also the confirmation string for deletions)
+curl -X POST http://localhost:8000/projects \
+     -H "Content-Type: application/json" \
+     -d '{"name":"widget-line","description":"Gear inspection"}'
 
-Training will produce `data/models/{model_id}/model.pt` + configs.
+# Upload images scoped to the project
+curl -X POST "http://localhost:8000/projects/{project_id}/upload" \
+     -F "files=@/path/image1.jpg"
+
+# Train and poll just like the scene endpoint
+curl -X POST "http://localhost:8000/projects/{project_id}/train" \
+     -H "Content-Type: application/json" \
+     -d '{"img_size":256,"epochs":40,"lr":5e-5}'
+```
+
+## Inference & Downloads
+- POST /models/{model_id}/test - upload images to score; response includes URLs for input, heatmap,
+  overlay, and bounding boxes where the anomaly threshold is exceeded.
+- GET /models/{model_id}/download - download model.pt for scene models.
+- GET /projects/{project_id}/models/{model_id}/download - download project-specific models.
+
+## GPU Notes
+- Training automatically switches to CUDA when torch.cuda.is_available().
+- Automatic mixed precision now uses the modern torch.amp APIs. No changes
+  are required from the client side; ensure your PyTorch installation includes GPU support.
+
+## Troubleshooting
+- **Missing DINO weights** - you will see FileNotFoundError referencing
+  dinov3_convnext_tiny_pretrain_lvd1689m-21b726bb.pth. Place the file at the repository root.
+- **Torch installation issues** - install torch/torchvision via the official index URLs shown above to avoid
+  slow source builds on Windows.
+- **Preview images not updating** - the UI caches aggressively; reload with cache disabled or hit the /tmp static mount directly.
+
+## Development Tips
+- Jobs run in background threads (app/services/jobs.py), so long-running training will not block the API.
+- All datasets and model artifacts stay under data/ so that the Git tree remains clean.
+- Use pytest or your preferred tooling for additional tests; none are bundled yet.

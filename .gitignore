@@ -1,2 +1,7 @@
 data
 tmp
+_pycache__
+*.pyc
+*.pyo
+*.pyd
+__pycache__

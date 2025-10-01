@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 import os
 from pathlib import Path
 from typing import List
@@ -25,12 +25,12 @@ from .services.storage import (
 from .services.jobs import JOBS
 from .services.training import train_job, train_job_project, resolve_model_checkpoint
 from .services.inference import test_images
-from .services.projects import create_project, list_projects, get_project
+from .services.projects import create_project, delete_project, get_project, list_projects
 from .services.models import list_models
 
 app = FastAPI(title=os.getenv("API_TITLE", "Anomaly Detection Backend"))
 
-# CORS (เปิดกว้างสำหรับ MVP)
+# Allow broad CORS during initial development.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -39,42 +39,45 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- Optional UI: ถ้ามีโฟลเดอร์ ui/ จะเสิร์ฟที่ /ui ---
+# Serve bundled UI assets when available.
 ROOT = Path(__file__).resolve().parents[1]
 UI_DIR = ROOT / "ui"
 if UI_DIR.exists():
     app.mount("/ui", StaticFiles(directory=str(UI_DIR), html=True), name="ui")
 
-# --- Static files (เสิร์ฟไฟล์ในโฟลเดอร์ data ผ่าน /static) ---
+# Expose data directory as static assets.
 DATA_DIR = ROOT / "data"
 if DATA_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(DATA_DIR)), name="static")
 
 @app.get("/")
 def root():
-    # เปิด / แล้วพาไปหน้า projects UI ถ้ามี ไม่งั้นไป /docs
+    """Redirect to the UI dashboard if available, otherwise the API docs."""
     return RedirectResponse(url="/ui/projects.html" if UI_DIR.exists() else "/docs")
 
 @app.get("/favicon.ico")
 def favicon():
-    # กัน log 404 รก ๆ
+    """Return an empty response so browsers stop requesting /favicon.ico."""
     return Response(status_code=204)
 
 @app.get("/health")
 def health():
+    """Basic health check for monitoring."""
     return {"ok": True}
 
-# === Scene-based (legacy) dataset upload ===
+# === Legacy scene uploads ===
 @app.post("/datasets/{scene_id}/upload")
 async def upload(scene_id: str, files: List[UploadFile] = File(...)):
+    """Upload scene-scoped images used for legacy training."""
     count = save_uploads(scene_id, files)
     if count == 0:
         raise HTTPException(status_code=400, detail="No valid images uploaded")
     return {"saved": count, "scene_id": scene_id}
 
-# === Scene-based training ===
+# === Legacy scene training ===
 @app.post("/train", response_model=TrainResponse)
 async def start_train(req: TrainRequest):
+    """Queue a training job for a legacy scene dataset."""
     raw_dir = get_raw_dir(req.scene_id)
     if not raw_dir.exists():
         raise HTTPException(status_code=404, detail=f"No dataset for scene_id={req.scene_id}")
@@ -82,15 +85,15 @@ async def start_train(req: TrainRequest):
     JOBS.run_in_thread(job, train_job, req.scene_id, raw_dir, req.img_size, req.epochs, req.lr)
     return TrainResponse(job_id=job.id)
 
-# === Project-based endpoints ===
+# === Project endpoints ===
 @app.get("/projects", response_model=List[ProjectInfo])
 def list_projects_api():
-    """ดึงรายการโปรเจกต์ทั้งหมด"""
+    """Return all projects with metadata."""
     return [ProjectInfo(**p) for p in list_projects()]
 
 @app.get("/projects/{project_id}", response_model=ProjectInfo)
 def get_project_api(project_id: str):
-    """รายละเอียดโปรเจกต์เดียว (สำหรับหน้า detail/เปิดงาน)"""
+    """Fetch a single project by identifier."""
     try:
         return ProjectInfo(**get_project(project_id))
     except FileNotFoundError:
@@ -98,13 +101,13 @@ def get_project_api(project_id: str):
 
 @app.post("/projects", response_model=ProjectInfo)
 def create_project_api(req: ProjectCreate):
-    """สร้างโปรเจกต์ใหม่"""
+    """Create a new project and return its metadata."""
     meta = create_project(req.name, req.description, req.training_mode)
     return ProjectInfo(**meta)
 
 @app.post("/projects/{project_id}/upload")
 async def upload_project(project_id: str, files: List[UploadFile] = File(...)):
-    """อัปโหลดรูปเข้าโปรเจกต์"""
+    """Upload project-scoped reference images."""
     count = save_project_uploads(project_id, files)
     if count == 0:
         raise HTTPException(status_code=400, detail="No valid images uploaded")
@@ -112,6 +115,7 @@ async def upload_project(project_id: str, files: List[UploadFile] = File(...)):
 
 @app.post("/projects/{project_id}/base-models/upload")
 async def upload_project_base_model_api(project_id: str, file: UploadFile = File(...)):
+    """Upload a base model checkpoint for project fine-tuning."""
     try:
         info = save_project_base_model(project_id, file)
     except FileNotFoundError:
@@ -122,6 +126,7 @@ async def upload_project_base_model_api(project_id: str, file: UploadFile = File
 
 @app.get("/models", response_model=List[ModelInfo])
 def list_models_api(mode: str | None = None, project_id: str | None = None):
+    """List models with optional filtering by mode or project."""
     try:
         return list_models(mode=mode, project_id=project_id)
     except ValueError as exc:
@@ -129,7 +134,7 @@ def list_models_api(mode: str | None = None, project_id: str | None = None):
 
 @app.post("/projects/{project_id}/train", response_model=TrainResponse)
 async def train_project(project_id: str, req: TrainProjectRequest):
-    """เทรนโมเดลสำหรับโปรเจกต์"""
+    """Queue a training job for the specified project."""
     raw_dir = get_project_raw_dir(project_id)
     if not raw_dir.exists():
         raise HTTPException(status_code=404, detail=f"No dataset for project_id={project_id}")
@@ -169,17 +174,18 @@ async def train_project(project_id: str, req: TrainProjectRequest):
     )
     return TrainResponse(job_id=job.id)
 
-# === Job status and model endpoints (เหมือนเดิม) ===
+# === Job status and model endpoints ===
 @app.get("/jobs/{job_id}", response_model=JobStatus)
 async def job_status(job_id: str):
+    """Retrieve status details for a background training job."""
     job = JOBS.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return JobStatus(status=job.status, progress=job.progress, model_id=job.model_id, detail=job.detail)
 
-# ดาวน์โหลดโมเดล (scene-mode)
 @app.get("/models/{model_id}/download")
 def download_model(model_id: str):
+    """Download a scene-mode model checkpoint."""
     path = MODELS_DIR / model_id / "model.pt"
     if not path.exists():
         if PROJECTS_DIR.exists():
@@ -192,18 +198,17 @@ def download_model(model_id: str):
         raise HTTPException(status_code=404, detail="Model not found")
     return FileResponse(str(path), media_type="application/octet-stream", filename="model.pt")
 
-# ดาวน์โหลดโมเดล (project-mode)
 @app.get("/projects/{project_id}/models/{model_id}/download")
 def download_project_model(project_id: str, model_id: str):
+    """Download a project-scoped model checkpoint."""
     path = PROJECTS_DIR / project_id / "models" / model_id / "model.pt"
     if not path.exists():
         raise HTTPException(status_code=404, detail="Model not found")
     return FileResponse(str(path), media_type="application/octet-stream", filename="model.pt")
 
-# ทดสอบโมเดล
 @app.post("/models/{model_id}/test", response_model=TestResponse)
 async def test_model(model_id: str, files: List[UploadFile] = File(...)):
-    # โหลดไฟล์ทั้งหมดเข้าหน่วยความจำ
+    """Run inference on uploaded images and return structured results."""
     buf_list = []
     for f in files:
         content = await f.read()
@@ -217,30 +222,32 @@ async def test_model(model_id: str, files: List[UploadFile] = File(...)):
     items = [TestItem(**r) for r in results]
     return TestResponse(model_id=model_id, items=items)
 
-from .services.projects import create_project, list_projects, get_project, delete_project as _delete_project
 @app.delete("/projects/{project_id}")
 def delete_project_api(project_id: str, confirm: str = Query(..., description="Type exact project name to confirm")):
+    """Delete a project after the caller confirms its name."""
     try:
         info = get_project(project_id)
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="project not found")
     if confirm != info["name"]:
         raise HTTPException(status_code=400, detail="Confirmation name mismatch")
-    _delete_project(project_id)
+    delete_project(project_id)
     return {"ok": True}
 
 
 @app.get("/projects/{project_id}/images")
 def list_project_images_api(project_id: str):
+    """List project image metadata for the gallery view."""
     return {"items": list_project_images(project_id)}
 
 @app.get("/datasets/{scene_id}/images")
 def list_scene_images_api(scene_id: str):
+    """List scene image metadata for the legacy workflow."""
     return {"items": list_scene_images(scene_id)}
 
-# ลบรูปในโปรเจกต์
 @app.delete("/projects/{project_id}/images/{filename}")
 def delete_project_image_api(project_id: str, filename: str):
+    """Delete a project image if it exists."""
     try:
         ok = delete_project_image(project_id, filename)
     except ValueError as e:
@@ -249,9 +256,9 @@ def delete_project_image_api(project_id: str, filename: str):
         raise HTTPException(status_code=404, detail="file not found")
     return {"ok": True}
 
-# ลบรูปใน scene (โหมดเดิม)
 @app.delete("/datasets/{scene_id}/images/{filename}")
 def delete_scene_image_api(scene_id: str, filename: str):
+    """Delete a scene image in the legacy workflow."""
     try:
         ok = delete_scene_image(scene_id, filename)
     except ValueError as e:
@@ -262,6 +269,7 @@ def delete_scene_image_api(scene_id: str, filename: str):
 
 @app.middleware("http")
 async def no_cache_ui(request, call_next):
+    """Prevent browsers from caching UI assets during iteration."""
     resp = await call_next(request)
     if request.url.path.startswith("/ui/"):
         resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
@@ -270,3 +278,14 @@ async def no_cache_ui(request, call_next):
     return resp
 
 app.mount("/tmp", StaticFiles(directory=str(TMP_DIR), html=False), name="tmp")
+
+
+
+
+
+
+
+
+
+
+

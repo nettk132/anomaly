@@ -11,7 +11,7 @@ import torch.nn.functional as F
 from ..models.autoencoder import ConvAE, build_autoencoder
 from .scoring import compute_anomaly_score
 from .dataset import make_loaders
-from ..config import MODELS_DIR, PROJECTS_DIR
+from ..config import MODELS_DIR, PROJECTS_DIR, SETTINGS
 
 # (optional) อัปเดต meta ของโปรเจกต์ ถ้ามีไฟล์ services/projects.py แล้ว
 try:
@@ -96,7 +96,10 @@ def train_job(job, scene_id: str, raw_dir: Path, img_size: int, epochs: int, lr:
 
     # Early stopping
     best_val = float('inf'); best_state = None
-    patience = max(5, epochs // 4); bad = 0
+    cfg = SETTINGS.training
+    base_patience = cfg.patience or max(1, epochs // 4)
+    patience = max(cfg.min_epochs_before_early_stop, base_patience)
+    bad = 0
 
     steps_per_epoch = max(1, len(train_loader))
     total_steps = max(1, epochs * steps_per_epoch)
@@ -263,7 +266,10 @@ def train_job_project(job, project_id: str, raw_dir: Path, img_size: int, epochs
     scaler = torch.amp.GradScaler('cuda', enabled=use_amp)
 
     best_val = float('inf'); best_state = None
-    patience = max(5, epochs // 4); bad = 0
+    cfg = SETTINGS.training
+    base_patience = cfg.patience or max(1, epochs // 4)
+    patience = max(cfg.min_epochs_before_early_stop, base_patience)
+    bad = 0
 
     steps_per_epoch = max(1, len(train_loader))
     total_steps = max(1, epochs * steps_per_epoch)

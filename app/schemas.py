@@ -58,11 +58,6 @@ class ModelInfo(BaseSchema):
     training_mode: Optional[str] = None
     path: str
 
-# ---------- ROI ----------
-class RoiPayload(BaseSchema):
-    image_size: Tuple[int, int]  # (H, W)
-    polygon: List[Tuple[int, int]]
-
 # ---------- Inference ----------
 class TestItem(BaseSchema):
     filename: str

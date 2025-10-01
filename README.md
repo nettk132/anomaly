@@ -52,6 +52,36 @@ scene_id workflow and a newer project-centric flow with lightweight HTML pages u
 5. Open http://localhost:8000/ui/projects.html (if the ui/ folder is present) or inspect
    the OpenAPI docs at http://localhost:8000/docs.
 
+## Configuration
+
+Runtime configuration is handled by an optional [`config.yaml`](./config.yaml) file and environment variables with the
+`APP_` prefix. Copy [`config.example.yaml`](./config.example.yaml) to `config.yaml` and tweak paths, upload limits, and
+training defaults for your environment. Every key can also be overridden via env vars, for example:
+
+```bash
+export APP_DATA_DIR=/mnt/storage/anomaly-data
+export APP_UPLOADS__MAX_TOTAL_SIZE_MB=256
+```
+
+Key settings:
+- `data_dir`, `tmp_dir` – filesystem layout for datasets, models, previews.
+- `uploads` – allowed extensions plus per-file and aggregate upload limits (enforced on the backend).
+- `training` – default batch size, validation split, and early-stopping patience.
+- `jobs.max_workers` – size of the background training thread pool.
+
+All directories are created automatically on startup.
+
+## Testing
+
+The repository now ships with a pytest suite covering the job manager, upload pipeline, and representative API flows.
+After installing the requirements run:
+
+```bash
+pytest
+```
+
+Add new tests alongside features to keep the pipeline green.
+
 ## Data Layout
 Uploads and training artifacts live under data/ (created automatically):
 - data/datasets/{scene_id}/raw/ - raw images for the legacy scene workflow.
@@ -112,6 +142,18 @@ curl -X POST "http://localhost:8000/projects/{project_id}/train" \
 - **Preview images not updating** - the UI caches aggressively; reload with cache disabled or hit the /tmp static mount directly.
 
 ## Development Tips
-- Jobs run in background threads (app/services/jobs.py), so long-running training will not block the API.
+- Jobs run in a bounded background thread pool (see `app/services/jobs.py`), so long-running training will not block the API.
 - All datasets and model artifacts stay under data/ so that the Git tree remains clean.
-- Use pytest or your preferred tooling for additional tests; none are bundled yet.
+- Use the bundled pytest suite as a starting point for further tests when extending the system.
+
+## License
+
+Distributed under the MIT License. See [`LICENSE`](./LICENSE) for details.
+
+---
+
+## ภาษาไทย (Thai Notes)
+
+- สามารถกำหนดค่าระบบผ่านไฟล์ `config.yaml` (ดูตัวอย่างใน `config.example.yaml`) หรือใช้ environment variables ที่ขึ้นต้นด้วย `APP_` เช่น `APP_DATA_DIR`.
+- ระบบอัปโหลดตรวจสอบนามสกุลและจำกัดขนาดไฟล์ต่อไฟล์/รวมในแต่ละคำขอเพื่อป้องกันการใช้ทรัพยากรเกิน.
+- เพิ่มคำสั่งทดสอบด้วย `pytest` แล้ว หากพัฒนา feature ใหม่ควรเขียน unit test เพิ่มทุกครั้ง.

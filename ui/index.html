@@ -52,8 +52,9 @@
     .thumb .del:hover{filter:brightness(0.93)}
     .thumb.selectable{cursor:pointer}
 
-    .canvas-wrap{position:relative;border:1px solid #333;border-radius:12px;overflow:hidden;background:#0c0e13;aspect-ratio:16/9}
-    canvas{display:block;width:100%;height:100%}
+    .preview-box{display:flex;align-items:center;justify-content:center;position:relative;border:1px solid #333;border-radius:12px;overflow:hidden;background:#0c0e13;aspect-ratio:16/9}
+    .preview-box img{max-width:100%;max-height:100%;display:none}
+    .preview-placeholder{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#7f8aa3;font-size:13px;padding:12px;text-align:center}
     .toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
     code.block{display:block;white-space:pre-wrap;background:#0c0f15;border:1px solid #222;border-radius:10px;padding:10px;color:#bcd;font-size:12px}
     .stat{display:grid;grid-template-columns:1fr auto;gap:6px;font-size:13px}
@@ -189,20 +190,12 @@
     </section>
 
     <section class="card">
-      <h3 style="margin-top:0">ROI (optional)</h3>
-      <div class="muted">Click to add points, double-click to close the polygon. Use Clear to start again.</div>
-      <div class="canvas-wrap">
-        <canvas id="canvas" style="display:block;width:100%;height:100%"></canvas>
+      <h3 style="margin-top:0">Image preview</h3>
+      <div class="preview-box">
+        <img id="previewImage" alt="" />
+        <div id="previewPlaceholder" class="preview-placeholder">Select an uploaded or stored image to preview it here.</div>
       </div>
-      <div class="toolbar">
-        <button id="btnClearRoi" class="warn">Clear ROI</button>
-        <button id="btnSaveRoi" class="primary">Save ROI</button>
-        <span id="roiMsg" class="muted"></span>
-      </div>
-      <details style="margin-top:8px">
-        <summary class="muted">Debug payload</summary>
-        <code id="dbg" class="block"></code>
-      </details>
+      <div id="previewInfo" class="muted" style="margin-top:8px"></div>
     </section>
   </div>
 
@@ -237,12 +230,9 @@ const jobProg      = el('jobProg');
 const modelIdEl    = el('modelId');
 const btnPoll      = el('btnPoll');
 const btnDownload  = el('btnDownload');
-const canvas       = el('canvas');
-const ctx          = canvas.getContext('2d');
-const btnClearRoi  = el('btnClearRoi');
-const btnSaveRoi   = el('btnSaveRoi');
-const roiMsg       = el('roiMsg');
-const dbg          = el('dbg');
+const previewImage = el('previewImage');
+const previewInfo  = el('previewInfo');
+const previewPlaceholder = el('previewPlaceholder');
 const testInput    = el('testInput');
 const btnTest      = el('btnTest');
 const testMsg      = el('testMsg');
@@ -267,9 +257,7 @@ let projectMeta = null;
 let baseModelOptions = [];
 let baseModelsLoading = false;
 let files = [];
-let activeImgUrl = null;
-const points = [];
-let closed = false;
+let previewSource = null;
 let jobTimer = null;
 let serverImageCount = 0;
 let lastTestCount = 0;
@@ -423,26 +411,6 @@ function toStaticUrl(p){
   return `${API_BASE}/static/${rel}`;
 }
 
-function syncCanvas(){
-  const rect = canvas.getBoundingClientRect();
-  canvas.width  = Math.round(rect.width);
-  canvas.height = Math.round(rect.height);
-}
-window.addEventListener('resize', syncCanvas);
-window.addEventListener('load',   syncCanvas);
-
-function syncCanvasDPR(){
-  const rect = canvas.getBoundingClientRect();
-  const dpr  = window.devicePixelRatio || 1;
-  canvas.style.width  = rect.width + 'px';
-  canvas.style.height = rect.height + 'px';
-  canvas.width  = Math.round(rect.width  * dpr);
-  canvas.height = Math.round(rect.height * dpr);
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-}
-window.addEventListener('resize', syncCanvasDPR);
-window.addEventListener('load',   syncCanvasDPR);
-
 async function loadInitialImages(){
   try{
     let res;
@@ -471,12 +439,6 @@ async function loadInitialImages(){
   }
 }
 
-
-function scrollToROI(){
-  const c = document.getElementById('canvas');
-  if (c) c.scrollIntoView({behavior:'smooth', block:'center'});
-}
-
 function renderGallery(items){
   const grid = document.getElementById('gallery');
   if (!grid) return;
@@ -495,20 +457,25 @@ function renderGallery(items){
     p.style.marginTop = '6px';
     p.textContent = 'No stored images yet';
     grid.appendChild(p);
+    if (previewSource && previewSource.origin && previewSource.origin.startsWith('Stored')) {
+      showPreview(null);
+    }
     return;
   }
   list.forEach((it, i) => {
     const wrap = document.createElement('div');
     wrap.className = 'thumb selectable';
     wrap.innerHTML = `
-      <img src="${it.url}" alt="${it.filename}">
+      <img src="${toStaticUrl(it.url) || it.url}" alt="${it.filename}">
       <span>${i+1}</span>
       <button class="del" title="Remove this image">Delete</button>
     `;
-
+    const resolvedUrl = toStaticUrl(it.url) || it.url;
     wrap.addEventListener('click', () => {
-      loadToCanvas(it.url);
-      scrollToROI();
+      if (resolvedUrl) {
+        const origin = ctx.type === 'project' ? 'Stored in project' : 'Stored in dataset';
+        showPreview(resolvedUrl, it.filename || '', origin);
+      }
     });
 
     wrap.querySelector('.del').addEventListener('click', async (e) => {
@@ -532,6 +499,14 @@ function renderGallery(items){
 
     grid.appendChild(wrap);
   });
+  if (!previewSource && list.length) {
+    const first = list[0];
+    const resolved = toStaticUrl(first.url) || first.url;
+    if (resolved) {
+      const origin = ctx.type === 'project' ? 'Stored in project' : 'Stored in dataset';
+      showPreview(resolved, first.filename || '', origin);
+    }
+  }
 }
 
 async function clearStoredImages(){
@@ -579,86 +554,40 @@ function updateThumbs(){
     const div = document.createElement('div');
     div.className='thumb';
     div.innerHTML = `<img src="${url}"><span>${i+1}</span>`;
-    div.onclick = ()=> loadToCanvas(url);
+    div.onclick = ()=> showPreview(url, f.name || `upload_${i}`, 'Upload queue');
     thumbs.appendChild(div);
   });
   fileCount.textContent = files.length ? `Selected ${files.length} file(s)` : 'No files selected';
-  if(files[0] && !activeImgUrl){ loadToCanvas(URL.createObjectURL(files[0])); }
+  if (!files.length && previewSource && previewSource.origin === 'Upload queue') {
+    showPreview(null);
+  }
+  if(files[0] && !previewSource){
+    const firstThumb = thumbs.querySelector('.thumb img');
+    if (firstThumb) {
+      showPreview(firstThumb.src, files[0].name || 'first upload', 'Upload queue');
+    }
+  }
   refreshSummary();
 }
 
-function loadToCanvas(url){
-  activeImgUrl = url;
-  points.length = 0;
-  closed = false;
-  draw();
-  const img = new Image();
-  img.onload = () => {
-    const scale = Math.min(canvas.width/img.width, canvas.height/img.height);
-    const w = img.width * scale;
-    const h = img.height * scale;
-    const x = (canvas.width - w) / 2;
-    const y = (canvas.height - h) / 2;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = '#0b0e13';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(img, x, y, w, h);
-    canvas.__imgMeta = { x, y, w, h, scale, origW: img.width, origH: img.height };
-    draw();
-  };
-  img.src = url;
-}
-
-function canvasToImageXY(cx, cy){
-  const m = canvas.__imgMeta;
-  if (!m) return null;
-  if (cx < m.x || cy < m.y || cx > m.x + m.w || cy > m.y + m.h) return null;
-  const ix = Math.round((cx - m.x) / m.w * m.origW);
-  const iy = Math.round((cy - m.y) / m.h * m.origH);
-  return { x: ix, y: iy };
-}
-
-function imageToCanvasXY(ix, iy){
-  const m = canvas.__imgMeta;
-  if (!m) return { x: 0, y: 0 };
-  return {
-    x: m.x + (ix / m.origW) * m.w,
-    y: m.y + (iy / m.origH) * m.h,
-  };
-}
-
-function draw(){
-  const m = canvas.__imgMeta;
-  if (!m || !activeImgUrl) return;
-  const img = new Image();
-  img.onload = () => {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = '#0b0e13';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(img, m.x, m.y, m.w, m.h);
-    if (points.length){
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = closed ? '#4ad6b8' : '#ffd166';
-      ctx.fillStyle = 'rgba(74,214,184,0.18)';
-      ctx.beginPath();
-      const first = imageToCanvasXY(points[0].x, points[0].y);
-      ctx.moveTo(first.x, first.y);
-      for (let i = 1; i < points.length; i++) {
-        const p = imageToCanvasXY(points[i].x, points[i].y);
-        ctx.lineTo(p.x, p.y);
-      }
-      if (closed) { ctx.closePath(); ctx.fill(); }
-      ctx.stroke();
-      points.forEach(pt => {
-        const p = imageToCanvasXY(pt.x, pt.y);
-        ctx.fillStyle = '#e9eef7';
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
-        ctx.fill();
-      });
-    }
-  };
-  img.src = activeImgUrl;
+function showPreview(url, label = '', origin){
+  if (!previewImage || !previewPlaceholder) return;
+  previewSource = url ? { url, label, origin } : null;
+  if (url) {
+    previewImage.src = url;
+    previewImage.style.display = 'block';
+    previewPlaceholder.style.display = 'none';
+  } else {
+    previewImage.src = '';
+    previewImage.style.display = 'none';
+    previewPlaceholder.style.display = 'flex';
+  }
+  if (previewInfo) {
+    const parts = [];
+    if (label) parts.push(label);
+    if (origin) parts.push(origin);
+    previewInfo.textContent = parts.join(' • ');
+  }
 }
 
 async function uploadFiles(){
@@ -820,53 +749,6 @@ function renderTestResults(items){
   refreshSummary();
 }
 
-canvas.addEventListener('click', (e)=>{
-  if(!canvas.__imgMeta || closed) return;
-  const rect = canvas.getBoundingClientRect();
-  const cx = e.clientX - rect.left;
-  const cy = e.clientY - rect.top;
-  const p = canvasToImageXY(cx, cy);
-  if(!p) return;
-  points.push(p);
-  draw();
-});
-
-canvas.addEventListener('dblclick', ()=>{
-  if(points.length>=3){ closed=true; draw(); }
-});
-
-btnClearRoi.onclick = ()=>{
-  points.length = 0;
-  closed = false;
-  draw();
-  roiMsg.textContent = '';
-};
-
-btnSaveRoi.onclick = async ()=>{
-  if (inProject) {
-    alert('ROI saving is available only in scene mode for now');
-    return;
-  }
-  const scene = sceneId.value.trim();
-  if(!scene) return alert('Please fill the scene ID first');
-  if(points.length<3 || !closed) return alert('Close the polygon before saving');
-  const m = canvas.__imgMeta; if(!m) return alert('No reference image loaded');
-  const payload = { image_size:[m.origH, m.origW], polygon: points.map(p=>[p.x,p.y]) };
-  roiMsg.textContent = 'Saving ROI…';
-  try{
-    const res = await fetch(`${API_BASE}/scenes/${encodeURIComponent(scene)}/roi`, {
-      method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)
-    });
-    if(!res.ok) throw new Error(await res.text());
-    roiMsg.textContent = 'ROI saved';
-    dbg.textContent = JSON.stringify(payload, null, 2);
-  }catch(err){
-    roiMsg.textContent = 'Failed to save ROI';
-    console.error(err);
-    alert('Saving ROI failed: '+err.message);
-  }
-};
-
 btnUpload.onclick = uploadFiles;
 btnTrain.onclick  = startTrain;
 btnPoll.onclick   = pollStatus;
@@ -899,8 +781,6 @@ window.addEventListener('load', async ()=>{
   if (inProject) {
     sceneId.value = `(project) ${projectId}`;
     sceneId.disabled = true;
-    btnSaveRoi.disabled = true;
-    btnClearRoi.disabled = true;
     await loadProjectMeta();
   } else {
     sceneId.value = 'cam_park_01';

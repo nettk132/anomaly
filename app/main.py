@@ -1,27 +1,26 @@
 from __future__ import annotations
-import os, json
+import os
 from pathlib import Path
 from typing import List
 
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
-from fastapi import Query
-from fastapi import HTTPException
 
-
+# Schemas & configuration
 from .schemas import (
-    TrainRequest, TrainResponse, JobStatus, RoiPayload,
+    TrainRequest, TrainResponse, JobStatus,
     TestResponse, TestItem,
     ProjectCreate, ProjectInfo, TrainProjectRequest, ModelInfo,
 )
-from .config import DATASETS_DIR, MODELS_DIR, PROJECTS_DIR
-from .config import TMP_DIR
+from .config import MODELS_DIR, PROJECTS_DIR, TMP_DIR
 from .services.storage import (
     save_uploads, get_raw_dir,
     save_project_uploads, get_project_raw_dir,
     save_project_base_model,
+    list_project_images, list_scene_images,
+    delete_project_image, delete_scene_image,
 )
 from .services.jobs import JOBS
 from .services.training import train_job, train_job_project, resolve_model_checkpoint
@@ -201,17 +200,6 @@ def download_project_model(project_id: str, model_id: str):
         raise HTTPException(status_code=404, detail="Model not found")
     return FileResponse(str(path), media_type="application/octet-stream", filename="model.pt")
 
-# Optional stub for ROI (ไม่ถูกใช้ในเทรน MVP)
-@app.post("/scenes/{scene_id}/roi")
-async def save_roi(scene_id: str, payload: RoiPayload):
-    out = DATASETS_DIR / scene_id
-    out.mkdir(parents=True, exist_ok=True)
-    (out / "roi.json").write_text(
-        json.dumps(payload.model_dump(), ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-    return {"ok": True}
-
 # ทดสอบโมเดล
 @app.post("/models/{model_id}/test", response_model=TestResponse)
 async def test_model(model_id: str, files: List[UploadFile] = File(...)):
@@ -242,12 +230,6 @@ def delete_project_api(project_id: str, confirm: str = Query(..., description="T
     return {"ok": True}
 
 
-from .services.storage import (
-    save_uploads, get_raw_dir,
-    save_project_uploads, get_project_raw_dir,
-    list_project_images, list_scene_images,   # <- เพิ่ม
-)
-
 @app.get("/projects/{project_id}/images")
 def list_project_images_api(project_id: str):
     return {"items": list_project_images(project_id)}
@@ -255,13 +237,6 @@ def list_project_images_api(project_id: str):
 @app.get("/datasets/{scene_id}/images")
 def list_scene_images_api(scene_id: str):
     return {"items": list_scene_images(scene_id)}
-
-from .services.storage import (
-    save_uploads, get_raw_dir,
-    save_project_uploads, get_project_raw_dir,
-    list_project_images, list_scene_images,
-    delete_project_image, delete_scene_image,   # ← เพิ่ม
-)
 
 # ลบรูปในโปรเจกต์
 @app.delete("/projects/{project_id}/images/{filename}")

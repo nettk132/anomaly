@@ -7,7 +7,7 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset, DataLoader, random_split
 import torchvision.transforms as T
-from ..config import ALLOWED_EXTS
+from ..config import ALLOWED_EXTS, SETTINGS
 
 class ImageFolderDataset(Dataset):
     def __init__(self, root: Path, img_size: int = 256):
@@ -61,7 +61,13 @@ def _build_transform(img_size: int, aug: bool) -> T.Compose:
             T.ToTensor(),
         ])
 
-def make_loaders(raw_dir: Path, img_size: int, batch_size: int = 32, val_ratio: float = 0.2, seed: int = 42):
+def make_loaders(
+    raw_dir: Path,
+    img_size: int,
+    batch_size: int | None = None,
+    val_ratio: float | None = None,
+    seed: int = 42,
+):
     # สแกนพาธทีเดียว เพื่อให้ train/val ใช้ลิสต์เดียวกัน
     paths: List[Path] = []
     for p in raw_dir.glob('*'):
@@ -72,7 +78,10 @@ def make_loaders(raw_dir: Path, img_size: int, batch_size: int = 32, val_ratio: 
     if len(paths) < 5:
         raise ValueError(f'Not enough images in {raw_dir} (got {len(paths)}, need >=5)')
 
-    val_len = max(1, int(len(paths) * val_ratio))
+    batch = batch_size or SETTINGS.training.batch_size
+    ratio = val_ratio or SETTINGS.training.val_ratio
+
+    val_len = max(1, int(len(paths) * ratio))
     train_len = len(paths) - val_len
 
     g = torch.Generator().manual_seed(seed)
@@ -88,6 +97,6 @@ def make_loaders(raw_dir: Path, img_size: int, batch_size: int = 32, val_ratio: 
     val_ds   = ImagePathsDataset(val_paths,   _build_transform(img_size, aug=False))
 
     pin = torch.cuda.is_available()
-    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True,  num_workers=0, pin_memory=pin)
-    val_loader   = DataLoader(val_ds,   batch_size=batch_size, shuffle=False, num_workers=0, pin_memory=pin)
+    train_loader = DataLoader(train_ds, batch_size=batch, shuffle=True,  num_workers=0, pin_memory=pin)
+    val_loader   = DataLoader(val_ds,   batch_size=batch, shuffle=False, num_workers=0, pin_memory=pin)
     return train_loader, val_loader, len(paths)

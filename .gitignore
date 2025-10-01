@@ -1,6 +1,69 @@
-data/
-tmp
-_pycache__/
-*.pyc
+# Virtual environments and local configuration
+.venv/
+.env
+.env.*
+.envrc
+
+# Python cache and build artifacts
+__pycache__/
+*.py[cod]
 *.pyo
-*.pyd
+*.so
+*.dylib
+*.egg-info/
+build/
+dist/
+htmlcov/
+.tox/
+.nox/
+.pytest_cache/
+.hypothesis/
+.mypy_cache/
+.pyre/
+.pytype/
+.dmypy.json
+
+# Editors and OS noise
+*.swp
+*.swo
+*.bak
+*.orig
+*.rej
+.DS_Store
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+
+# Application runtime data
+instance/
+
+# Global data directory (keep repo clean)
+data/
+
+# Ignore image outputs everywhere
+*.png
+*.jpg
+*.jpeg
+*.bmp
+*.gif
+*.tif
+*.tiff
+*.webp
+
+# Logs and reports
+*.log
+*.pot
+.coverage
+.coverage.*
+coverage.xml
+nosetests.xml
+
+# Temporary crash/output files
+*.tmp
+*.temp
+
+# Local weight checkpoints (keep outside Git to avoid >100MB files)
+dinov3_convnext_tiny_pretrain_lvd1689m-21b726bb.pth
+dinov3_vit7b16_imagenet1k_linear_head-90d8ed92.pth

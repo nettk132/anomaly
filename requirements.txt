@@ -3,6 +3,7 @@ uvicorn[standard]==0.30.6
 python-multipart==0.0.9
 pydantic==2.8.2
 pydantic-settings==2.4.0
+pytest==8.3.2
 
 # Computer-vision & model utilities
 numpy==1.26.4

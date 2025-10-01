@@ -1,0 +1,22 @@
+# Application configuration defaults. Copy this file to config.yaml and adjust as needed.
+root_dir: .
+
+# Directories (paths are resolved relative to root_dir unless absolute)
+data_dir: data
+tmp_dir: tmp
+
+uploads:
+  allowed_extensions: [".jpg", ".jpeg", ".png"]
+  max_files_per_upload: 200
+  max_file_size_mb: 32
+  max_total_size_mb: 512
+
+training:
+  batch_size: 32
+  val_ratio: 0.2
+  patience: 10
+  min_epochs_before_early_stop: 5
+
+jobs:
+  max_workers: 2
+  poll_interval_seconds: 0.5

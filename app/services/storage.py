@@ -4,23 +4,33 @@ import hashlib
 import time
 import uuid
 from pathlib import Path
-from typing import Iterable, Set
+from typing import Iterable, Set, Tuple
 
 from fastapi import UploadFile
 
 import yaml
+
+from PIL import Image, UnidentifiedImageError
 
 from ..config import (
     DATASETS_DIR,
     PROJECTS_DIR,
     ALLOWED_EXTS,
     MAX_FILES_PER_UPLOAD,
+    MAX_FILE_SIZE_BYTES,
+    MAX_TOTAL_UPLOAD_BYTES,
 )
 
 BASE_MODEL_EXTS = {".pt", ".pth"}
 
 # ---------- utils ----------
-def _write_and_hash(src_file, dst_path: Path, chunk_size: int = 1 << 20) -> str:
+def _write_and_hash(
+    src_file,
+    dst_path: Path,
+    *,
+    chunk_size: int = 1 << 20,
+    max_bytes: int | None = None,
+) -> Tuple[str, int]:
     """
     เขียนไฟล์ลงปลายทางแบบสตรีม พร้อมคำนวณแฮช (blake2b) ในคราวเดียว
     คืนค่า digest hex string
@@ -28,15 +38,27 @@ def _write_and_hash(src_file, dst_path: Path, chunk_size: int = 1 << 20) -> str:
     h = hashlib.blake2b(digest_size=16)
     dst_path.parent.mkdir(parents=True, exist_ok=True)
     src_file.seek(0)
+    written = 0
     with dst_path.open("wb") as f:
         while True:
             chunk = src_file.read(chunk_size)
             if not chunk:
                 break
+            written += len(chunk)
+            if max_bytes is not None and written > max_bytes:
+                raise ValueError("file too large")
             h.update(chunk)
             f.write(chunk)
     src_file.seek(0)  # คืนพอยน์เตอร์ เผื่อ FastAPI จะใช้งานต่อ
-    return h.hexdigest()
+    return h.hexdigest(), written
+
+
+def _verify_image(path: Path) -> None:
+    try:
+        with Image.open(path) as img:
+            img.verify()
+    except (UnidentifiedImageError, OSError) as exc:
+        raise ValueError("invalid image content") from exc
 
 
 # ---------- SCENE (ของเดิม รักษาให้ใช้ได้ต่อ) ----------
@@ -62,9 +84,13 @@ def save_uploads(
     saved = 0
     seen_names: Set[str] = set()
     seen_hashes: Set[str] = set()
+    total_bytes = 0
 
     for idx, up in enumerate(files):
         if idx >= MAX_FILES_PER_UPLOAD:
+            break
+
+        if total_bytes >= MAX_TOTAL_UPLOAD_BYTES:
             break
 
         name = Path(up.filename or f"upload_{idx}").name
@@ -77,8 +103,21 @@ def save_uploads(
 
         dst = target / name
 
-        # คำนวณแฮชและเขียนไฟล์ในคราวเดียว
-        file_hash = _write_and_hash(up.file, dst)
+        try:
+            file_hash, written = _write_and_hash(up.file, dst, max_bytes=MAX_FILE_SIZE_BYTES)
+        except ValueError:
+            dst.unlink(missing_ok=True)
+            continue
+
+        if total_bytes + written > MAX_TOTAL_UPLOAD_BYTES:
+            dst.unlink(missing_ok=True)
+            break
+
+        try:
+            _verify_image(dst)
+        except ValueError:
+            dst.unlink(missing_ok=True)
+            continue
 
         # กันไฟล์เนื้อหาซ้ำ (แม้ชื่อไม่เหมือน) -> ลบไฟล์ที่เพิ่งเขียนทิ้ง ถ้าซ้ำ
         if dedup_content:
@@ -90,6 +129,7 @@ def save_uploads(
             seen_hashes.add(file_hash)
 
         seen_names.add(name)
+        total_bytes += written
         saved += 1
 
     return saved
@@ -115,9 +155,13 @@ def save_project_uploads(
     saved = 0
     seen_names: Set[str] = set()
     seen_hashes: Set[str] = set()
+    total_bytes = 0
 
     for idx, up in enumerate(files):
         if idx >= MAX_FILES_PER_UPLOAD:
+            break
+
+        if total_bytes >= MAX_TOTAL_UPLOAD_BYTES:
             break
 
         name = Path(up.filename or f"upload_{idx}").name
@@ -129,7 +173,21 @@ def save_project_uploads(
             continue
 
         dst = target / name
-        file_hash = _write_and_hash(up.file, dst)
+        try:
+            file_hash, written = _write_and_hash(up.file, dst, max_bytes=MAX_FILE_SIZE_BYTES)
+        except ValueError:
+            dst.unlink(missing_ok=True)
+            continue
+
+        if total_bytes + written > MAX_TOTAL_UPLOAD_BYTES:
+            dst.unlink(missing_ok=True)
+            break
+
+        try:
+            _verify_image(dst)
+        except ValueError:
+            dst.unlink(missing_ok=True)
+            continue
 
         if dedup_content:
             if file_hash in seen_hashes:
@@ -140,6 +198,7 @@ def save_project_uploads(
             seen_hashes.add(file_hash)
 
         seen_names.add(name)
+        total_bytes += written
         saved += 1
 
     return saved
@@ -215,7 +274,7 @@ def save_project_base_model(project_id: str, file: UploadFile) -> dict:
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest_path = dest_dir / 'model.pt'
 
-    file_hash = _write_and_hash(file.file, dest_path)
+    file_hash, _ = _write_and_hash(file.file, dest_path, max_bytes=MAX_FILE_SIZE_BYTES)
 
     config = {
         'project_id': project_id,

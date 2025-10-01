@@ -21,9 +21,10 @@ from .config import TMP_DIR
 from .services.storage import (
     save_uploads, get_raw_dir,
     save_project_uploads, get_project_raw_dir,
+    save_project_base_model,
 )
 from .services.jobs import JOBS
-from .services.training import train_job, train_job_project
+from .services.training import train_job, train_job_project, resolve_model_checkpoint
 from .services.inference import test_images
 from .services.projects import create_project, list_projects, get_project
 from .services.models import list_models
@@ -99,7 +100,7 @@ def get_project_api(project_id: str):
 @app.post("/projects", response_model=ProjectInfo)
 def create_project_api(req: ProjectCreate):
     """สร้างโปรเจกต์ใหม่"""
-    meta = create_project(req.name, req.description)
+    meta = create_project(req.name, req.description, req.training_mode)
     return ProjectInfo(**meta)
 
 @app.post("/projects/{project_id}/upload")
@@ -109,6 +110,16 @@ async def upload_project(project_id: str, files: List[UploadFile] = File(...)):
     if count == 0:
         raise HTTPException(status_code=400, detail="No valid images uploaded")
     return {"saved": count, "project_id": project_id}
+
+@app.post("/projects/{project_id}/base-models/upload")
+async def upload_project_base_model_api(project_id: str, file: UploadFile = File(...)):
+    try:
+        info = save_project_base_model(project_id, file)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="project not found")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return info
 
 @app.get("/models", response_model=List[ModelInfo])
 def list_models_api(mode: str | None = None, project_id: str | None = None):
@@ -123,9 +134,40 @@ async def train_project(project_id: str, req: TrainProjectRequest):
     raw_dir = get_project_raw_dir(project_id)
     if not raw_dir.exists():
         raise HTTPException(status_code=404, detail=f"No dataset for project_id={project_id}")
+
+    try:
+        meta = get_project(project_id)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="project not found")
+
+    mode = (meta.get("training_mode") or "anomaly").lower()
+    if mode not in ("anomaly", "finetune"):
+        mode = "anomaly"
+
+    base_model_id = req.base_model_id
+    if mode == "finetune":
+        if not base_model_id:
+            raise HTTPException(status_code=400, detail="base_model_id is required for finetune projects")
+        try:
+            resolve_model_checkpoint(base_model_id)
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail=f"Base model {base_model_id} not found")
+    else:
+        base_model_id = None
+
     job = JOBS.create()
-    # ใช้ train_job_project เพื่อบันทึกโมเดลในโฟลเดอร์ project
-    JOBS.run_in_thread(job, train_job_project, project_id, raw_dir, req.img_size, req.epochs, req.lr)
+    job.detail = f"queued ({mode})"
+    JOBS.run_in_thread(
+        job,
+        train_job_project,
+        project_id,
+        raw_dir,
+        req.img_size,
+        req.epochs,
+        req.lr,
+        mode,
+        base_model_id,
+    )
     return TrainResponse(job_id=job.id)
 
 # === Job status and model endpoints (เหมือนเดิม) ===

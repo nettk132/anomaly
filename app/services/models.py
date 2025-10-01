@@ -62,6 +62,13 @@ def _collect_from_dir(model_dir: Path, mode: str, *, scene_id: Optional[str] = N
     cfg_path = model_dir / 'config.yaml'
     cfg = _load_config(cfg_path)
     thr = _load_threshold(model_dir / 'threshold.json')
+    training_mode = cfg.get('training_mode')
+    if isinstance(training_mode, str):
+        training_mode = training_mode.lower()
+    else:
+        training_mode = None
+    if mode == 'project' and training_mode not in ('anomaly', 'finetune'):
+        training_mode = 'anomaly'
     info = {
         'model_id': model_dir.name,
         'mode': mode,
@@ -73,6 +80,8 @@ def _collect_from_dir(model_dir: Path, mode: str, *, scene_id: Optional[str] = N
         'lr': cfg.get('lr'),
         'threshold': thr,
         'note': cfg.get('note'),
+        'base_model_id': cfg.get('base_model_id'),
+        'training_mode': training_mode,
         'path': _relative_to_data(model_dir),
     }
     return info
@@ -97,11 +106,15 @@ def list_models(*, mode: Optional[str] = None, project_id: Optional[str] = None)
             if project_id and pid != project_id:
                 continue
             models_dir = proj_dir / 'models'
-            if not models_dir.exists():
-                continue
-            for entry in models_dir.iterdir():
-                if entry.is_dir():
-                    items.append(_collect_from_dir(entry, 'project', project_id=pid))
+            if models_dir.exists():
+                for entry in models_dir.iterdir():
+                    if entry.is_dir():
+                        items.append(_collect_from_dir(entry, 'project', project_id=pid))
+            imports_dir = proj_dir / 'imports'
+            if imports_dir.exists():
+                for entry in imports_dir.iterdir():
+                    if entry.is_dir():
+                        items.append(_collect_from_dir(entry, 'project', project_id=pid))
 
     def sort_key(item: dict):
         created = item.get('created_at') or ''

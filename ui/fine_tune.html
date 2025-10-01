@@ -1,0 +1,567 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <link rel="icon" href="/ui/favicon.ico?v=1">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fine-tune Project - Anomaly Detection</title>
+  <style>
+    :root { --bg:#0f1115; --panel:#171a21; --muted:#7f8aa3; --accent:#4ad6b8; --danger:#ff5d5d; --ok:#74d680; }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:#e9eef7;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,"Noto Sans",sans-serif;line-height:1.6}
+    a{color:inherit;text-decoration:none}
+
+    .app-header{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 24px;border-bottom:1px solid #222;background:linear-gradient(180deg,rgba(19,22,30,0.9),rgba(19,22,30,0.6));position:sticky;top:0;z-index:10}
+    .header-main{display:flex;flex-direction:column;gap:4px}
+    .header-main h1{font-size:22px;margin:0}
+    .header-main .muted{color:var(--muted);font-size:13px}
+    .header-actions{display:flex;gap:8px;flex-wrap:wrap}
+    .nav-btn{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:10px;border:1px solid rgba(74,214,184,0.35);background:rgba(74,214,184,0.12);color:var(--accent);font-size:13px;font-weight:600;cursor:pointer;transition:background 0.2s ease,transform 0.2s ease}
+    .nav-btn:hover{background:rgba(74,214,184,0.24);transform:translateY(-1px)}
+
+    .info-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;padding:18px 24px}
+    .info-card{background:var(--panel);border:1px solid #1f2330;border-radius:14px;padding:16px 18px;box-shadow:0 12px 24px rgba(0,0,0,0.2)}
+    .info-card h3{margin:0 0 10px;font-size:15px}
+    .summary-list{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+    .summary-list li{display:flex;justify-content:space-between;gap:12px;padding:8px 12px;border-radius:10px;background:rgba(255,255,255,0.04);font-size:13px}
+    .summary-label{color:var(--muted);font-size:12px}
+
+    .wrap{display:grid;grid-template-columns:minmax(320px,360px) 1fr;gap:16px;padding:0 24px 32px 24px;align-items:start}
+    .card{background:var(--panel);border:1px solid #1f2330;border-radius:14px;padding:16px 18px;box-shadow:0 16px 30px rgba(0,0,0,0.2)}
+    .card h3{margin-top:0;font-size:16px}
+    .muted{color:var(--muted);font-size:12px}
+    .row{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+    .row label{width:120px}
+    input[type=text],input[type=number],select{flex:1;padding:8px 10px;border-radius:10px;border:1px solid #333;background:#0e1016;color:#e9eef7;font-size:14px}
+    button{padding:9px 14px;border-radius:10px;border:1px solid #2a2f3a;background:#111520;color:#e9eef7;cursor:pointer;font-size:13px;transition:transform 0.1s ease,background 0.2s ease}
+    button.primary{background:var(--accent);color:#061014;border-color:#2b8f80;font-weight:600}
+    button.warn{background:#2b1113;border-color:#61272c;color:#ffc9c9}
+    button:hover:not(:disabled){transform:translateY(-1px)}
+    button:disabled{opacity:.55;cursor:not-allowed;transform:none}
+
+    .drop{border:2px dashed #3a4254;border-radius:12px;padding:18px;text-align:center;background:#0e1118}
+    .thumbs{display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:8px;margin-top:10px;max-height:240px;overflow:auto}
+    .thumb{position:relative;border:1px solid #333;border-radius:12px;overflow:hidden;background:#05070c}
+    .thumb img{display:block;width:100%;height:90px;object-fit:cover}
+    .thumb span{position:absolute;left:6px;bottom:6px;background:rgba(0,0,0,.55);padding:2px 6px;border-radius:6px;font-size:11px}
+    .thumb .del{position:absolute;top:6px;right:6px;border:none;border-radius:8px;background:rgba(255,93,93,.9);color:#fff;font-size:12px;padding:2px 6px;cursor:pointer}
+    .thumb .del:hover{filter:brightness(0.93)}
+
+    .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    .toolbar.tight{justify-content:flex-end}
+    .results{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px;max-height:340px;overflow:auto;margin-top:10px}
+    .result{border:1px solid #333;border-radius:12px;overflow:hidden;background:#0e1116;display:flex;flex-direction:column}
+    .result img{width:100%;height:120px;object-fit:cover}
+    .result .meta{padding:10px;font-size:12px;display:grid;gap:6px}
+    .badge{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;border:1px solid rgba(255,255,255,0.15)}
+    .badge.ok{color:var(--ok);border-color:rgba(116,214,128,0.4);background:rgba(116,214,128,0.1)}
+    .badge.bad{color:#ff8686;border-color:rgba(255,93,93,0.4);background:rgba(255,93,93,0.1)}
+
+    .stat{display:grid;grid-template-columns:1fr auto;gap:8px;font-size:13px}
+    progress{width:100%;height:10px;border-radius:5px}
+    .dl{color:#a8ffec;font-size:12px}
+
+    .mode-pill{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;background:rgba(74,214,184,0.12);border:1px solid rgba(74,214,184,0.4);color:var(--accent);font-size:12px;font-weight:600}
+
+    @media (max-width:960px){
+      .wrap{grid-template-columns:1fr;}
+    }
+  </style>
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-main">
+      <h1 id="pageTitle">Fine-tune project</h1>
+      <div class="muted" id="pageSubtitle">Continue training an existing model with fresh data.</div>
+      <span class="mode-pill">Fine-tune workflow</span>
+    </div>
+    <div class="header-actions">
+      <button class="nav-btn" id="btnBack">← All projects</button>
+      <button class="nav-btn" id="btnOpenPreview" style="display:none;">Open preview folder</button>
+    </div>
+  </header>
+
+  <section class="info-grid">
+    <article class="info-card">
+      <h3>Project summary</h3>
+      <ul class="summary-list">
+        <li><span class="summary-label">Project ID</span><span class="value" id="statProject">-</span></li>
+        <li><span class="summary-label">Images</span><span class="value" id="statImages">-</span></li>
+        <li><span class="summary-label">Last model</span><span class="value" id="statModel">-</span></li>
+      </ul>
+    </article>
+    <article class="info-card">
+      <h3>Training status</h3>
+      <ul class="summary-list">
+        <li><span class="summary-label">Last job</span><span class="value" id="statJob">-</span></li>
+        <li><span class="summary-label">Base model</span><span class="value" id="statBase">-</span></li>
+        <li><span class="summary-label">Last test</span><span class="value" id="statTest">-</span></li>
+      </ul>
+    </article>
+  </section>
+
+  <div class="wrap">
+    <section class="card">
+      <h3 style="margin-top:0">1) Dataset / Upload</h3>
+      <div class="muted">Upload the latest normal samples for this project. They will be stored under the project workspace.</div>
+      <div style="height:10px"></div>
+      <div id="drop" class="drop" ondragover="event.preventDefault()">
+        <div>Drag images here or choose files <input id="fileInput" type="file" accept="image/*" multiple /></div>
+        <div class="muted">Supports JPG / PNG and multiple files at once</div>
+      </div>
+      <div class="toolbar" style="margin-top:10px">
+        <button id="btnUpload" class="primary">Upload to project</button>
+        <button id="btnClearFiles">Clear list</button>
+      </div>
+      <div id="fileCount" class="muted">No files selected</div>
+      <div id="thumbs" class="thumbs"></div>
+      <h3 style="margin:16px 0 6px">Stored images</h3>
+      <div class="toolbar tight" style="margin-bottom:6px">
+        <button id="btnClearGallery" class="warn">Clear list</button>
+      </div>
+      <div id="gallery" class="thumbs"></div>
+    </section>
+
+    <section class="card">
+      <h3 style="margin-top:0">2) Fine-tune parameters</h3>
+      <div class="muted">Select the previous checkpoint and adjust the hyper-parameters if necessary.</div>
+      <div class="row">
+        <label class="muted">img_size</label>
+        <input id="imgSize" type="number" value="256" min="64" step="32" />
+      </div>
+      <div class="row">
+        <label class="muted">epochs</label>
+        <input id="epochs" type="number" value="20" min="1" step="1" />
+      </div>
+      <div class="row">
+        <label class="muted">learning_rate</label>
+        <input id="lr" type="number" value="0.00005" step="0.00001" />
+      </div>
+      <div class="row">
+        <label class="muted">upload checkpoint</label>
+        <input id="baseModelFile" type="file" accept=".pt,.pth" />
+      </div>
+      <div class="toolbar" style="margin-bottom:12px">
+        <button id="btnUploadBaseModel">Upload checkpoint</button>
+        <span id="uploadBaseMsg" class="muted"></span>
+      </div>
+      <div id="baseModelHelper" class="muted" style="font-size:12px;margin:6px 0 14px;">Upload a .pt/.pth to use as the fine-tune base model.</div>
+      <div class="toolbar">
+        <button id="btnTrain" class="primary">Start fine-tune</button>
+        <button id="btnPoll">Refresh status</button>
+      </div>
+      <div id="trainMsg" class="muted"></div>
+
+      <h3 style="margin:18px 0 6px">3) Job status</h3>
+      <div class="stat"><span>Job id</span><code id="jobId">-</code></div>
+      <div class="stat"><span>Status</span><code id="jobStatus">-</code></div>
+      <div class="stat"><span>Progress</span><span style="min-width:120px"><progress id="jobProg" value="0" max="1"></progress></span></div>
+      <div class="stat"><span>New model id</span><code id="modelId">-</code></div>
+      <a id="btnDownload" class="dl" href="#" download style="display:none">Download model.pt</a>
+
+      <h3 style="margin:18px 0 6px">4) Test updated model</h3>
+      <div class="muted">Upload samples to measure anomaly scores with the new checkpoint.</div>
+      <div class="toolbar" style="margin-top:8px">
+        <input id="testInput" type="file" accept="image/*" multiple />
+        <button id="btnTest" class="primary">Run test</button>
+      </div>
+      <div id="testMsg" class="muted"></div>
+      <div id="testResults" class="results"></div>
+    </section>
+  </div>
+
+  <script>
+    const API_BASE = '';
+    const params = new URLSearchParams(location.search);
+    const projectId = params.get('projectId');
+    if (!projectId) {
+      window.location.replace('/ui/projects.html');
+    }
+
+    const el = (id) => document.getElementById(id);
+    const pageTitle = el('pageTitle');
+    const pageSubtitle = el('pageSubtitle');
+    const btnBack = el('btnBack');
+    const btnOpenPreview = el('btnOpenPreview');
+    const statProject = el('statProject');
+    const statImages = el('statImages');
+    const statModel = el('statModel');
+    const statJob = el('statJob');
+    const statBase = el('statBase');
+    const statTest = el('statTest');
+    const drop = el('drop');
+    const fileInput = el('fileInput');
+    const btnUpload = el('btnUpload');
+    const btnClearFiles = el('btnClearFiles');
+    const btnClearGallery = el('btnClearGallery');
+    const fileCount = el('fileCount');
+    const thumbs = el('thumbs');
+    const gallery = el('gallery');
+    const imgSize = el('imgSize');
+    const epochs = el('epochs');
+    const lr = el('lr');
+    const baseModelHelper = el('baseModelHelper');
+    const baseModelFile = el('baseModelFile');
+    const btnUploadBaseModel = el('btnUploadBaseModel');
+    const uploadBaseMsg = el('uploadBaseMsg');
+    const btnTrain = el('btnTrain');
+    const btnPoll = el('btnPoll');
+    const trainMsg = el('trainMsg');
+    const jobIdEl = el('jobId');
+    const jobStatus = el('jobStatus');
+    const jobProg = el('jobProg');
+    const modelIdEl = el('modelId');
+    const btnDownload = el('btnDownload');
+    const testInput = el('testInput');
+    const btnTest = el('btnTest');
+    const testMsg = el('testMsg');
+    const testResults = el('testResults');
+
+    let projectMeta = null;
+    let files = [];
+    let galleryItems = [];
+    let serverImageCount = 0;
+    let jobTimer = null;
+    let lastTestCount = 0;
+    let selectedBaseModelId = null;
+
+    function refreshSummary(){
+      statProject.textContent = projectId || '-';
+      statImages.textContent = `${serverImageCount} stored`;
+      statModel.textContent = projectMeta && projectMeta.last_model_id ? projectMeta.last_model_id : 'None';
+      const status = (jobStatus.textContent || '').trim();
+      const prog = Math.round((Number(jobProg.value || 0)) * 100);
+      statJob.textContent = status ? (prog > 0 && prog < 100 ? `${status} - ${prog}%` : status) : '-';
+      const baseText = selectedBaseModelId || '';
+      statBase.textContent = baseText || 'No base model selected';
+      if (baseModelHelper) {
+        baseModelHelper.textContent = baseText
+          ? `Base model ready: ${baseText}`
+          : 'Upload a .pt/.pth to use as the fine-tune base model.';
+      }
+      const testText = (testMsg.textContent || '').trim();
+      statTest.textContent = lastTestCount ? `${lastTestCount} images` : (testText || 'Not tested');
+    }
+
+    function updateThumbs(){
+      fileCount.textContent = files.length ? `${files.length} files ready to upload` : 'No files selected';
+      thumbs.innerHTML = '';
+      files.forEach((file, idx) => {
+        const url = URL.createObjectURL(file);
+        const div = document.createElement('div');
+        div.className = 'thumb';
+        div.innerHTML = `<img src="${url}" alt=""><span>${file.name}</span><button class="del">×</button>`;
+        div.querySelector('.del').onclick = () => {
+          files.splice(idx, 1);
+          updateThumbs();
+        };
+        thumbs.appendChild(div);
+      });
+      refreshSummary();
+    }
+
+    function renderGallery(){
+      gallery.innerHTML = '';
+      galleryItems.forEach(item => {
+        const div = document.createElement('div');
+        div.className = 'thumb';
+        div.innerHTML = `<img src="${API_BASE}${item.url}" alt=""><span>${item.filename}</span>`;
+        gallery.appendChild(div);
+      });
+    }
+
+    async function loadInitialImages(){
+      try {
+        const res = await fetch(`${API_BASE}/projects/${encodeURIComponent(projectId)}/images`);
+        if (!res.ok) throw new Error(await res.text());
+        const js = await res.json();
+        galleryItems = Array.isArray(js.items) ? js.items : [];
+        serverImageCount = galleryItems.length;
+        renderGallery();
+      } catch (err) {
+        console.error(err);
+      }
+      refreshSummary();
+    }
+
+    async function clearStoredImages(){
+      if (!btnClearGallery) return;
+      if (!galleryItems.length) {
+        alert('No stored images to clear.');
+        return;
+      }
+      if (!confirm(`Delete all images from project "${projectId}"?`)) return;
+      const originalText = btnClearGallery.textContent;
+      btnClearGallery.disabled = true;
+      btnClearGallery.textContent = 'Clearing...';
+      try {
+        for (const item of galleryItems) {
+          const endpoint = `${API_BASE}/projects/${encodeURIComponent(projectId)}/images/${encodeURIComponent(item.filename)}`;
+          const res = await fetch(endpoint, { method:'DELETE' });
+          if (!res.ok) {
+            const txt = await res.text();
+            throw new Error(txt || 'Failed to delete image');
+          }
+        }
+        await loadInitialImages();
+        alert('Stored images cleared.');
+      } catch (err) {
+        console.error('clearStoredImages error:', err);
+        alert('Failed to clear stored images: ' + err.message);
+      } finally {
+        btnClearGallery.textContent = originalText;
+        btnClearGallery.disabled = false;
+      }
+    }
+
+    async function uploadBaseModelFile(){
+      if (!baseModelFile) {
+        alert('File input not available');
+        return;
+      }
+      const file = baseModelFile.files ? baseModelFile.files[0] : null;
+      if (!file) {
+        alert('Select a .pt or .pth file to upload');
+        return;
+      }
+      const fd = new FormData();
+      fd.append('file', file, file.name);
+      if (btnUploadBaseModel) btnUploadBaseModel.disabled = true;
+      if (uploadBaseMsg) uploadBaseMsg.textContent = 'Uploading...';
+      try {
+        const url = `${API_BASE}/projects/${encodeURIComponent(projectId)}/base-models/upload`;
+        const res = await fetch(url, { method:'POST', body: fd });
+        const js = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(js.detail || res.statusText);
+        selectedBaseModelId = js.model_id || null;
+        if (uploadBaseMsg) uploadBaseMsg.textContent = selectedBaseModelId ? `Uploaded: ${selectedBaseModelId}` : 'Upload completed';
+        if (baseModelFile) baseModelFile.value = '';
+        refreshSummary();
+      } catch (err) {
+        console.error('uploadBaseModelFile error:', err);
+        if (uploadBaseMsg) uploadBaseMsg.textContent = 'Upload failed: ' + err.message;
+        alert('Upload failed: ' + err.message);
+      } finally {
+        if (btnUploadBaseModel) btnUploadBaseModel.disabled = false;
+        refreshSummary();
+      }
+    }
+
+    async function fetchProjectMeta(){
+      try {
+        const res = await fetch(`${API_BASE}/projects/${encodeURIComponent(projectId)}`);
+        if (!res.ok) throw new Error(await res.text());
+        const meta = await res.json();
+        if ((meta.training_mode || 'anomaly').toLowerCase() !== 'finetune') {
+          window.location.replace(`/ui/index.html?projectId=${encodeURIComponent(projectId)}`);
+          return;
+        }
+        projectMeta = meta;
+        pageTitle.textContent = meta.name ? `Fine-tune: ${meta.name}` : 'Fine-tune project';
+        pageSubtitle.textContent = meta.description || 'Continue training your existing model with new images.';
+        statProject.textContent = projectId;
+        statModel.textContent = meta.last_model_id || 'None';
+        if (btnOpenPreview) {
+          if (meta.last_model_id) {
+            btnOpenPreview.style.display = 'inline-flex';
+            btnOpenPreview.onclick = () => {
+              window.open(`${API_BASE}/static/preview/${encodeURIComponent(meta.last_model_id)}`);
+            };
+          } else {
+            btnOpenPreview.style.display = 'none';
+          }
+        }
+        serverImageCount = meta.num_images ?? 0;
+        renderGallery();
+        selectedBaseModelId = meta.last_model_id || null;
+      } catch (err) {
+        console.error(err);
+        selectedBaseModelId = null;
+        alert('Failed to load project meta: ' + err);
+      }
+      refreshSummary();
+    }
+
+    async function uploadFiles(){
+      if (!files.length) return alert('No files to upload');
+      const fd = new FormData();
+      files.forEach(f => fd.append('files', f, f.name));
+      btnUpload.disabled = true;
+      btnUpload.textContent = 'Uploading...';
+      try {
+        const url = `${API_BASE}/projects/${encodeURIComponent(projectId)}/upload`;
+        const res = await fetch(url, { method:'POST', body: fd });
+        const js = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(js.detail || res.statusText);
+        alert(`Uploaded ${js.saved ?? files.length} file(s)`);
+        files = [];
+        updateThumbs();
+        await loadInitialImages();
+      } catch (err) {
+        console.error(err);
+        alert('Upload failed: ' + err.message);
+      } finally {
+        btnUpload.disabled = false;
+        btnUpload.textContent = 'Upload to project';
+      }
+    }
+
+    async function startTrain(){
+      const payload = {
+        img_size: parseInt(imgSize.value || 256),
+        epochs: parseInt(epochs.value || 20),
+        lr: parseFloat(lr.value || 0.00005)
+      };
+      const baseId = selectedBaseModelId || null;
+      if (!baseId) {
+        trainMsg.textContent = 'Please upload a base checkpoint before starting.';
+        if (baseModelFile) baseModelFile.focus();
+        refreshSummary();
+        return;
+      }
+      payload.base_model_id = baseId;
+      trainMsg.textContent = 'Submitting fine-tune job...';
+      setDownload(null);
+      btnTrain.disabled = true;
+      try {
+        const res = await fetch(`${API_BASE}/projects/${encodeURIComponent(projectId)}/train`, {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify(payload)
+        });
+        const js = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(js.detail || res.statusText);
+        jobIdEl.textContent = js.job_id || '-';
+        jobStatus.textContent = 'queued';
+        jobProg.value = 0;
+        modelIdEl.textContent = '-';
+        trainMsg.textContent = 'Job accepted';
+        if (jobTimer) clearInterval(jobTimer);
+        jobTimer = setInterval(pollStatus, 2000);
+      } catch (err) {
+        console.error(err);
+        trainMsg.textContent = 'Failed to submit job';
+        alert('Training failed: ' + err.message);
+      } finally {
+        btnTrain.disabled = false;
+        refreshSummary();
+      }
+    }
+
+    async function pollStatus(){
+      const id = jobIdEl.textContent.trim();
+      if (!id || id === '-') return;
+      try {
+        const res = await fetch(`${API_BASE}/jobs/${encodeURIComponent(id)}`);
+        const js = await res.json();
+        if (!res.ok) throw new Error(js.detail || res.statusText);
+        jobStatus.textContent = js.status || '-';
+        jobProg.value = js.progress ?? 0;
+        if (js.model_id) {
+          modelIdEl.textContent = js.model_id;
+          setDownload(js.model_id);
+        }
+        const statusLower = (js.status || '').toLowerCase();
+        if (['finished','failed','canceled','error'].includes(statusLower)) {
+          if (jobTimer) clearInterval(jobTimer);
+          await fetchProjectMeta();
+        }
+      } catch (err) {
+        console.error(err);
+      }
+      refreshSummary();
+    }
+
+    function setDownload(modelId){
+      if (!modelId) {
+        btnDownload.style.display = 'none';
+        return;
+      }
+      btnDownload.href = `${API_BASE}/projects/${encodeURIComponent(projectId)}/models/${encodeURIComponent(modelId)}/download`;
+      btnDownload.style.display = 'inline-block';
+    }
+
+    async function runTest(){
+      const mid = (modelIdEl.textContent || '').trim();
+      if (!mid || mid === '-') return alert('Train a model first or wait for the job to finish');
+      const files = testInput.files ? Array.from(testInput.files) : [];
+      if (!files.length) return alert('Select images to test');
+      const fd = new FormData();
+      files.forEach(f => fd.append('files', f, f.name));
+      btnTest.disabled = true;
+      testMsg.textContent = 'Running inference...';
+      try {
+        const res = await fetch(`${API_BASE}/models/${encodeURIComponent(mid)}/test`, { method:'POST', body: fd });
+        const js = await res.json();
+        if (!res.ok) throw new Error(js.detail || res.statusText);
+        renderTestResults(js.items);
+        testMsg.textContent = `Success: ${js.items.length} image(s)`;
+      } catch (err) {
+        console.error(err);
+        testMsg.textContent = 'Test failed: ' + err.message;
+        alert('Test failed: ' + err.message);
+        lastTestCount = 0;
+      } finally {
+        btnTest.disabled = false;
+        refreshSummary();
+      }
+    }
+
+    function renderTestResults(items){
+      testResults.innerHTML = '';
+      if (!Array.isArray(items) || !items.length) {
+        testResults.innerHTML = '<div class="muted">No results</div>';
+        lastTestCount = 0;
+        refreshSummary();
+        return;
+      }
+      lastTestCount = items.length;
+      items.forEach(it => {
+        const div = document.createElement('div');
+        div.className = 'result';
+        const rawUrl = it.overlay_url || it.result_image || it.image_url;
+        const badge = it.is_anomaly ? '<span class="badge bad">ANOMALY</span>' : '<span class="badge ok">NORMAL</span>';
+        div.innerHTML = `
+          <img src="${rawUrl ? `${API_BASE}${rawUrl}` : ''}" alt="">
+          <div class="meta">
+            <div>${badge} <strong>${it.filename || ''}</strong></div>
+            <div>score: ${Number(it.score || 0).toFixed(4)} • thr: ${Number(it.thr || it.threshold || 0).toFixed(4)}</div>
+            ${rawUrl ? `<a class="dl" href="${API_BASE}${rawUrl}" target="_blank">Open result</a>` : ''}
+          </div>`;
+        testResults.appendChild(div);
+      });
+      refreshSummary();
+    }
+
+    drop.addEventListener('drop', (e) => {
+      e.preventDefault();
+      files = files.concat(Array.from(e.dataTransfer.files || []));
+      updateThumbs();
+    });
+    drop.addEventListener('dragover', (e) => e.preventDefault());
+    fileInput.addEventListener('change', (e) => {
+      files = Array.from(e.target.files || []);
+      updateThumbs();
+    });
+    btnClearFiles.addEventListener('click', () => {
+      files = [];
+      updateThumbs();
+    });
+    if (btnClearGallery) {
+      btnClearGallery.addEventListener('click', clearStoredImages);
+    }
+    btnUpload.addEventListener('click', uploadFiles);
+    if (btnUploadBaseModel) btnUploadBaseModel.addEventListener('click', uploadBaseModelFile);
+    btnTrain.addEventListener('click', startTrain);
+    btnPoll.addEventListener('click', pollStatus);
+    btnTest.addEventListener('click', runTest);
+    btnBack.addEventListener('click', () => window.location.href = '/ui/projects.html');
+
+    window.addEventListener('load', async () => {
+      await fetchProjectMeta();
+      await loadInitialImages();
+      refreshSummary();
+    });
+  </script>
+</body>
+</html>

@@ -58,8 +58,11 @@
     .modal-backdrop.show{display:flex}
     .modal{background:var(--panel);border:1px solid #1f2330;border-radius:16px;padding:20px 22px;min-width:320px;max-width:420px;box-shadow:0 24px 40px rgba(0,0,0,0.3);display:grid;gap:12px}
     .modal h3{margin:0;font-size:18px}
-    .modal input,.modal textarea{width:100%;padding:8px 10px;border-radius:10px;border:1px solid #343a47;background:#111520;color:#e9eef7;font-size:13px}
+    .modal input,.modal textarea,.modal select{width:100%;padding:8px 10px;border-radius:10px;border:1px solid #343a47;background:#111520;color:#e9eef7;font-size:13px}
     .modal textarea{resize:vertical;min-height:70px}
+    .mode-field{display:flex;flex-direction:column;gap:6px;}
+    .mode-field label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:0.04em;}
+    .mode-hint{margin:-6px 0 6px;color:var(--muted);font-size:12px;}
     .modal-actions{display:flex;gap:10px}
     .modal-actions button{flex:1;padding:9px 0;border-radius:10px;border:1px solid #2a2f3a;background:#111520;color:#e9eef7;cursor:pointer}
     .modal-actions button.primary{background:var(--accent);color:#061014;font-weight:600}
@@ -128,6 +131,14 @@
     <h3>New project</h3>
     <input id="projName" placeholder="Project name" />
     <textarea id="projDesc" placeholder="Description (optional)"></textarea>
+    <div class="mode-field">
+      <label for="projMode">Training mode</label>
+      <select id="projMode">
+        <option value="anomaly" selected>Anomaly detection (default)</option>
+        <option value="finetune">Fine-tune existing model</option>
+      </select>
+    </div>
+    <p class="mode-hint">Fine-tune continues an existing model with fresh images.</p>
     <div class="modal-actions">
       <button id="createBtn" class="primary">Create</button>
       <button id="cancelBtn">Cancel</button>
@@ -165,6 +176,7 @@ const statHasModel = document.getElementById('statHasModel');
 
 const projName = document.getElementById('projName');
 const projDesc = document.getElementById('projDesc');
+const projMode = document.getElementById('projMode');
 const createBtn = document.getElementById('createBtn');
 const cancelBtn = document.getElementById('cancelBtn');
 
@@ -186,6 +198,7 @@ function closeCreateModal(){
   modal.classList.remove('show');
   projName.value = '';
   projDesc.value = '';
+  projMode.value = 'anomaly';
 }
 
 function openDeleteModal(proj){
@@ -248,11 +261,15 @@ function renderProjects(){
   filtered.forEach(proj => {
     const card = document.createElement('div');
     card.className = 'project-card';
+    const mode = (proj.training_mode || 'anomaly').toLowerCase();
+    const modeLabel = mode === 'finetune' ? '🔁 Fine-tune' : '🧪 Anomaly detection';
     const hasModel = Boolean(proj.last_model_id);
+    card.dataset.mode = mode;
     card.innerHTML = `
       <h3 title="${proj.name}">${proj.name}</h3>
       <p>${proj.description ? proj.description : '—'}</p>
       <div class="project-meta">
+        <span class="tag mode-tag" title="Training mode">${modeLabel}</span>
         <span class="tag">📷 ${proj.num_images} images</span>
         <span class="tag" title="${hasModel ? proj.last_model_id : 'No model yet'}">${hasModel ? '🧠 Latest model available' : '🕒 No model yet'}</span>
         <span class="tag">🗓 ${formatDate(proj.created_at)}</span>
@@ -264,7 +281,8 @@ function renderProjects(){
     `;
 
     card.querySelector('.primary').onclick = () => {
-      window.location.href = '/ui/index.html?projectId=' + encodeURIComponent(proj.project_id);
+      const target = mode === 'finetune' ? '/ui/fine_tune.html' : '/ui/index.html';
+      window.location.href = `${target}?projectId=${encodeURIComponent(proj.project_id)}`;
     };
     card.querySelector('.danger').onclick = () => openDeleteModal(proj);
 
@@ -291,6 +309,7 @@ async function loadProjects(){
 async function createProject(){
   const name = projName.value.trim();
   const description = projDesc.value.trim();
+  const training_mode = projMode.value || 'anomaly';
   if (!name) {
     alert('Please enter a project name');
     projName.focus();
@@ -302,7 +321,7 @@ async function createProject(){
     const res = await fetch(API_BASE + '/projects', {
       method:'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({name, description})
+      body: JSON.stringify({name, description, training_mode})
     });
     if (!res.ok) throw new Error(await res.text());
     closeCreateModal();

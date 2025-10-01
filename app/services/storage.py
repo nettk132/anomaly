@@ -1,18 +1,23 @@
 # app/services/storage.py
 from __future__ import annotations
 import hashlib
+import time
+import uuid
 from pathlib import Path
 from typing import Iterable, Set
 
 from fastapi import UploadFile
+
+import yaml
 
 from ..config import (
     DATASETS_DIR,
     PROJECTS_DIR,
     ALLOWED_EXTS,
     MAX_FILES_PER_UPLOAD,
-    
 )
+
+BASE_MODEL_EXTS = {".pt", ".pth"}
 
 # ---------- utils ----------
 def _write_and_hash(src_file, dst_path: Path, chunk_size: int = 1 << 20) -> str:
@@ -190,3 +195,37 @@ def delete_scene_image(scene_id: str, filename: str) -> bool:
         path.unlink()
         return True
     return False
+
+def save_project_base_model(project_id: str, file: UploadFile) -> dict:
+    project_dir = PROJECTS_DIR / project_id
+    if not project_dir.exists():
+        raise FileNotFoundError('project not found')
+
+    filename = Path(file.filename or 'model.pt').name
+    ext = Path(filename).suffix.lower()
+    if ext not in BASE_MODEL_EXTS:
+        raise ValueError('file must be .pt or .pth')
+
+    imports_dir = project_dir / 'imports'
+    imports_dir.mkdir(parents=True, exist_ok=True)
+
+    ts = time.strftime('%Y%m%d-%H%M%S')
+    model_id = f"import-{ts}-{uuid.uuid4().hex[:8]}"
+    dest_dir = imports_dir / model_id
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest_path = dest_dir / 'model.pt'
+
+    file_hash = _write_and_hash(file.file, dest_path)
+
+    config = {
+        'project_id': project_id,
+        'created_at': ts,
+        'note': f'Uploaded checkpoint ({filename})',
+        'base_model_source': 'upload',
+        'origin_filename': filename,
+        'file_hash': file_hash,
+    }
+    with (dest_dir / 'config.yaml').open('w', encoding='utf-8') as f:
+        yaml.safe_dump(config, f, allow_unicode=True)
+
+    return {'model_id': model_id, 'filename': filename}

@@ -142,6 +142,7 @@
 
       <hr style="border:none;border-top:1px solid #2a2f3a;margin:14px 0" />
       <h3 style="margin:0">2) Train parameters</h3>
+      <div id="trainingModeInfo" class="muted" style="margin:6px 0 10px;"></div>
       <div class="row">
         <label class="muted" style="width:120px">img_size</label>
         <input id="imgSize" type="number" value="256" min="64" step="32" />
@@ -153,6 +154,14 @@
       <div class="row">
         <label class="muted" style="width:120px">learning_rate</label>
         <input id="lr" type="number" value="0.0001" step="0.0001" />
+      </div>
+      <div id="baseModelWrap" style="display:none;">
+        <div class="row">
+          <label class="muted" style="width:120px">base_model_id</label>
+          <input id="baseModelInput" list="baseModelsList" placeholder="Select or type base model id" />
+        </div>
+        <datalist id="baseModelsList"></datalist>
+        <div id="baseModelHelper" class="muted" style="font-size:12px;margin:6px 0 0;">We will load this checkpoint before training.</div>
       </div>
       <div class="toolbar">
         <button id="btnTrain" class="primary">Start training</button>
@@ -215,6 +224,11 @@ const btnClearGallery = el('btnClearGallery');
 const imgSize      = el('imgSize');
 const epochs       = el('epochs');
 const lr           = el('lr');
+const trainingModeInfo = el('trainingModeInfo');
+const baseModelWrap = el('baseModelWrap');
+const baseModelInput = el('baseModelInput');
+const baseModelsList = el('baseModelsList');
+const baseModelHelper = el('baseModelHelper');
 const btnTrain     = el('btnTrain');
 const trainMsg     = el('trainMsg');
 const jobIdEl      = el('jobId');
@@ -249,6 +263,9 @@ const summaryTest     = el('summaryTest');
   }
 })();
 
+let projectMeta = null;
+let baseModelOptions = [];
+let baseModelsLoading = false;
 let files = [];
 let activeImgUrl = null;
 const points = [];
@@ -297,19 +314,96 @@ if (typeof MutationObserver !== 'undefined') {
   });
 }
 
+async function populateBaseModelOptions(){
+  if (!baseModelsList || !baseModelHelper) return;
+  if (baseModelsLoading) return;
+  baseModelsLoading = true;
+  baseModelHelper.textContent = 'Loading available models…';
+  try {
+    const res = await fetch(`${API_BASE}/models`);
+    if (!res.ok) throw new Error(await res.text());
+    const items = await res.json();
+    const map = new Map();
+    if (Array.isArray(items)) {
+      for (const item of items) {
+        if (item && item.model_id && !map.has(item.model_id)) {
+          map.set(item.model_id, item);
+        }
+      }
+    }
+    baseModelOptions = Array.from(map.values());
+    if (baseModelsList) {
+      const escapeAttr = (str) => String(str ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+      const optionsHtml = baseModelOptions.map((m) => {
+        const id = escapeAttr(m.model_id);
+        const parts = [];
+        if (m.project_id) parts.push(`project:${m.project_id}`);
+        if (m.mode) parts.push(m.mode);
+        const suffix = parts.length ? ` (${parts.join(' · ')})` : '';
+        return `<option value="${id}">${id}${suffix}</option>`;
+      }).join(' ');
+      baseModelsList.innerHTML = optionsHtml;
+    }
+    baseModelHelper.textContent = 'Select the checkpoint to continue from or type a model id.';
+  } catch (err) {
+    console.error(err);
+    baseModelHelper.textContent = 'Failed to load model list, type the model id manually.';
+  } finally {
+    baseModelsLoading = false;
+  }
+}
+
+async function applyTrainingModeUI(mode){
+  if (!trainingModeInfo) return;
+  const normalized = (mode || 'anomaly').toLowerCase();
+  if (normalized === 'finetune') {
+    trainingModeInfo.textContent = 'Mode: Fine-tune existing model';
+    if (baseModelWrap) baseModelWrap.style.display = '';
+    if (baseModelHelper) {
+      baseModelHelper.style.display = 'block';
+      baseModelHelper.textContent = 'Loading available models…';
+    }
+    await populateBaseModelOptions();
+    if (baseModelInput) {
+      if (projectMeta && projectMeta.last_model_id) {
+        baseModelInput.value = projectMeta.last_model_id;
+      }
+    }
+  } else {
+    trainingModeInfo.textContent = 'Mode: Anomaly detection';
+    if (baseModelWrap) baseModelWrap.style.display = 'none';
+    if (baseModelHelper) baseModelHelper.style.display = 'none';
+    if (baseModelInput) baseModelInput.value = '';
+  }
+}
+
 async function loadProjectMeta(){
-  if (!inProject || !projectLabel) return;
+  if (!inProject || !projectLabel) {
+    await applyTrainingModeUI('anomaly');
+    return;
+  }
   try {
     const res = await fetch(`${API_BASE}/projects/${encodeURIComponent(projectId)}`);
     if (!res.ok) throw new Error(await res.text());
     const meta = await res.json();
+    const mode = (meta.training_mode || 'anomaly').toLowerCase();
+    if (mode === 'finetune') {
+      const target = `/ui/fine_tune.html?projectId=${encodeURIComponent(projectId)}`;
+      window.location.replace(target);
+      return;
+    }
+    projectMeta = meta;
     if (projectLabel.dataset) {
       projectLabel.dataset.labelOverride = meta.name ? `Project: ${meta.name}` : `Project: ${projectId}`;
     }
+    await applyTrainingModeUI('anomaly');
   } catch (err) {
+    console.error(err);
+    projectMeta = null;
     if (projectLabel.dataset) {
       projectLabel.dataset.labelOverride = `Project: ${projectId}`;
     }
+    await applyTrainingModeUI('anomaly');
   }
   refreshSummary();
 }
@@ -598,21 +692,37 @@ async function uploadFiles(){
 }
 
 async function startTrain(){
-  trainMsg.textContent = 'Submitting training job…';
   setDownload(null);
   let res;
   if (inProject) {
+    const payload = {
+      img_size: parseInt(imgSize.value||256),
+      epochs:   parseInt(epochs.value||30),
+      lr:       parseFloat(lr.value||0.0001)
+    };
+    const mode = (projectMeta?.training_mode || 'anomaly').toLowerCase();
+    if (mode === 'finetune') {
+      const baseId = (baseModelInput?.value || '').trim();
+      if (!baseId) {
+        trainMsg.textContent = 'Please select a base model before starting fine-tune.';
+        if (baseModelInput) baseModelInput.focus();
+        return;
+      }
+      payload.base_model_id = baseId;
+    }
+    trainMsg.textContent = 'Submitting training job…';
     res = await fetch(`${API_BASE}/projects/${encodeURIComponent(projectId)}/train`, {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({
-        img_size: parseInt(imgSize.value||256),
-        epochs:   parseInt(epochs.value||30),
-        lr:       parseFloat(lr.value||0.0001)
-      })
+      body: JSON.stringify(payload)
     });
   } else {
     const scene = sceneId.value.trim();
-    if (!scene) { trainMsg.textContent='Please fill the scene ID first'; return; }
+    if (!scene) {
+      trainMsg.textContent = 'Please fill the scene ID first';
+      sceneId.focus();
+      return;
+    }
+    trainMsg.textContent = 'Submitting training job…';
     res = await fetch(`${API_BASE}/train`, {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({
@@ -651,6 +761,9 @@ async function pollStatus(){
     const statusLower = (js.status||'').toLowerCase();
     if(['finished','failed','canceled','error'].includes(statusLower)){
       if(jobTimer) clearInterval(jobTimer);
+      if (statusLower === 'finished' && inProject) {
+        await loadProjectMeta();
+      }
     }
   }catch(err){ console.error(err); }
   refreshSummary();
@@ -781,17 +894,18 @@ if (btnClearGallery) {
   btnClearGallery.onclick = clearStoredImages;
 }
 
-window.addEventListener('load', ()=>{
+window.addEventListener('load', async ()=>{
+  await applyTrainingModeUI('anomaly');
   if (inProject) {
     sceneId.value = `(project) ${projectId}`;
     sceneId.disabled = true;
     btnSaveRoi.disabled = true;
     btnClearRoi.disabled = true;
-    loadProjectMeta();
+    await loadProjectMeta();
   } else {
     sceneId.value = 'cam_park_01';
   }
-  loadInitialImages();
+  await loadInitialImages();
   refreshSummary();
 });
 

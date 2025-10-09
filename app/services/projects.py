@@ -4,9 +4,10 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from ..config import PROJECTS_DIR
+from ..utils import MAX_SLUG_LENGTH, safe_join, validate_slug
 import shutil
 
-VALID_TRAINING_MODES = {"anomaly", "finetune"}
+VALID_TRAINING_MODES = {"anomaly", "finetune", "yolo"}
 DEFAULT_TRAINING_MODE = "anomaly"
 
 
@@ -29,7 +30,8 @@ def _slugify(name: str) -> str:
 
 
 def project_dir(project_id: str) -> Path:
-    return PROJECTS_DIR / project_id
+    validate_slug(project_id, name="project_id")
+    return safe_join(PROJECTS_DIR, project_id, must_exist=False)
 
 
 def create_project(name: str, description: Optional[str] = None, training_mode: str = DEFAULT_TRAINING_MODE) -> Dict:
@@ -37,11 +39,19 @@ def create_project(name: str, description: Optional[str] = None, training_mode: 
 
     mode = _normalize_training_mode(training_mode, strict=True)
 
+    base_slug = _slugify(name)
     ts = time.strftime("%Y%m%d-%H%M%S")
-    pid = f"{_slugify(name)}-{ts}"
+    max_slug_len = max(1, MAX_SLUG_LENGTH - len(ts) - 1)
+    slug_trimmed = (base_slug[:max_slug_len] or "project")[:max_slug_len]
+    pid = f"{slug_trimmed}-{ts}"
+    pid = validate_slug(pid, name="project_id")
     pdir = project_dir(pid)
     (pdir / "raw").mkdir(parents=True, exist_ok=True)
     (pdir / "models").mkdir(exist_ok=True)
+    if mode == "yolo":
+        (pdir / "yolo").mkdir(exist_ok=True)
+        (pdir / "yolo" / "dataset").mkdir(exist_ok=True)
+        (pdir / "yolo" / "runs").mkdir(exist_ok=True)
     (pdir / "preview").mkdir(exist_ok=True)
 
     meta = {
@@ -90,6 +100,7 @@ def get_project(project_id: str) -> Dict:
 
 
 def set_last_model(project_id: str, model_id: str) -> None:
+    validate_slug(model_id, name="model_id")
     pdir = project_dir(project_id)
     meta_path = pdir / "meta.json"
     if not meta_path.exists():
@@ -105,3 +116,4 @@ def delete_project(project_id: str) -> None:
     if not pdir.exists():
         raise FileNotFoundError("project not found")
     shutil.rmtree(pdir)
+

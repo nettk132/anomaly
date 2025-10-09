@@ -38,6 +38,14 @@ class TrainingSettings(BaseModel):
     val_ratio: float = Field(default=0.2, gt=0.0, lt=0.9)
     patience: Optional[int] = Field(default=10, ge=1)
     min_epochs_before_early_stop: int = Field(default=5, ge=1)
+    sandbox_command: Optional[List[str]] = Field(
+        default=None,
+        description="Command prefix used to launch training in a sandboxed container",
+    )
+    require_approval: bool = Field(
+        default=False,
+        description="Require manual approval before executing training jobs",
+    )
 
 
 class JobsSettings(BaseModel):
@@ -137,6 +145,10 @@ class AppSettings(BaseSettings):
 
         for folder in (self.data_dir, self.models_dir, self.datasets_dir, self.projects_dir, self.tmp_dir):
             folder.mkdir(parents=True, exist_ok=True)
+
+        env_flag = os.getenv("TRAINING_REQUIRE_APPROVAL")
+        if env_flag is not None:
+            self.training.require_approval = str(env_flag).strip().lower() in {"1", "true", "yes", "on"}
 
         return self
 

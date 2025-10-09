@@ -1,10 +1,14 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
+import json
 from io import BytesIO
 from pathlib import Path
 
+import pytest
+import torch
 from fastapi import UploadFile
 from PIL import Image
+from safetensors.torch import save_file as save_safetensors
 
 from app.services import storage
 
@@ -37,6 +41,15 @@ def test_save_uploads_enforces_limits(temp_env):
 
     scene_raw = temp_env["datasets"] / "scene-a" / "raw"
     assert len(list(scene_raw.glob("*.png"))) == 3
+    assert (scene_raw / "_index.json").exists()
+
+    listing = storage.list_scene_images("scene-a")
+    assert len(listing) == 3
+    assert {item["display_name"] for item in listing} == {f"img_{i}.png" for i in range(3)}
+    assert all(item["filename"] != item["display_name"] for item in listing)
+    assert all(len(Path(item["filename"]).stem) == 32 for item in listing)
+    metadata = json.loads((scene_raw / "_index.json").read_text(encoding="utf-8"))
+    assert {info["display_name"] for info in metadata["files"].values()} == {f"img_{i}.png" for i in range(3)}
 
 
 def test_save_uploads_skips_invalid_and_too_large(temp_env, monkeypatch):
@@ -53,7 +66,11 @@ def test_save_uploads_skips_invalid_and_too_large(temp_env, monkeypatch):
     scene_raw = temp_env["datasets"] / "scene-b" / "raw"
     files = list(scene_raw.glob("*.png"))
     assert len(files) == 1
-    assert files[0].name == "ok.png"
+    listing = storage.list_scene_images("scene-b")
+    assert len(listing) == 1
+    assert listing[0]["display_name"] == "ok.png"
+    assert listing[0]["filename"].endswith(".png")
+    assert listing[0]["filename"] != listing[0]["display_name"]
 
 
 def test_save_project_uploads_dedup(temp_env):
@@ -65,3 +82,26 @@ def test_save_project_uploads_dedup(temp_env):
     proj_raw = temp_env["projects"] / "proj-1" / "raw"
     files = list(proj_raw.glob("*.png"))
     assert len(files) == 1
+    assert (proj_raw / "_index.json").exists()
+    listing = storage.list_project_images("proj-1")
+    assert len(listing) == 1
+    assert listing[0]["display_name"] == "dup.png"
+    assert listing[0]["filename"] != "dup.png"
+    assert len(Path(listing[0]["filename"]).stem) == 32
+    metadata = json.loads((proj_raw / "_index.json").read_text(encoding="utf-8"))
+    assert list(metadata["files"].values())[0]["display_name"] == "dup.png"
+
+
+def test_save_project_base_model_requires_safetensors(temp_env):
+    proj_dir = temp_env["projects"] / "proj-import"
+    proj_dir.mkdir(parents=True, exist_ok=True)
+
+    bad = _make_binary_upload("bad.pt", b"not allowed")
+    with pytest.raises(ValueError):
+        storage.save_project_base_model("proj-import", bad)
+
+    weights_path = temp_env["tmp"] / "weights.safetensors"
+    save_safetensors({"w": torch.zeros(1)}, str(weights_path))
+    good = _make_binary_upload("weights.safetensors", weights_path.read_bytes())
+    info = storage.save_project_base_model("proj-import", good)
+    assert info["filename"] == "weights.safetensors"

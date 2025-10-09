@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <link rel="icon" href="/ui/favicon.ico?v=1">
+  <meta charset="UTF-8" />
+  <title>Projects - Anomaly Detection</title>
+  <style>
+    :root { --bg:#0f1115; --panel:#171a21; --muted:#7f8aa3; --accent:#4ad6b8; --danger:#ff5d5d; }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:#e9eef7;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,"Noto Sans",sans-serif;line-height:1.6}
+    a{color:inherit;text-decoration:none}
+
+    .app-header{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;padding:20px 28px;border-bottom:1px solid #222;background:linear-gradient(180deg,rgba(19,22,30,0.9),rgba(19,22,30,0.5))}
+    .header-main{display:flex;flex-direction:column;gap:6px}
+    .header-main h1{margin:0;font-size:22px}
+    .header-main p{margin:0;font-size:14px;color:var(--muted)}
+    .header-actions{display:flex;flex-direction:column;gap:10px}
+    .primary-btn{display:inline-flex;align-items:center;gap:8px;background:var(--accent);color:#071015;padding:10px 16px;border-radius:12px;border:1px solid #2b8f80;font-weight:600;cursor:pointer;transition:transform .1s ease}
+    .primary-btn:hover{transform:translateY(-1px)}
+    .nav-links{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+    .nav-btn{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:10px;border:1px solid rgba(74,214,184,0.35);background:rgba(74,214,184,0.12);color:var(--accent);font-size:13px;font-weight:600;transition:background .2s ease,transform .1s ease}
+    .nav-btn:hover{background:rgba(74,214,184,0.22);transform:translateY(-1px)}
+
+    .page{padding:20px 28px;display:grid;gap:24px}
+    .info-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px}
+    .info-card{background:var(--panel);border:1px solid #1f2330;border-radius:14px;padding:16px 18px;box-shadow:0 12px 26px rgba(0,0,0,0.18)}
+    .info-card h3{margin:0 0 10px;font-size:16px}
+    .info-card p{margin:0;color:#c2c8d9;font-size:13px}
+    .summary-list{list-style:none;padding:0;margin:0;display:grid;gap:8px;font-size:13px}
+    .summary-list li{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:8px 12px;border-radius:10px;background:rgba(255,255,255,0.03)}
+    .summary-list span.label{color:var(--muted);font-size:12px}
+    .summary-list span.value{font-weight:600}
+    .step-list{margin:0;padding-left:20px;font-size:13px;color:#c6cede}
+    .step-list li{margin-bottom:6px}
+
+    .toolbar{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between}
+    .search-box{flex:1;min-width:200px;display:flex;align-items:center;gap:8px;background:#111520;border:1px solid #2a2f3a;border-radius:10px;padding:0 12px}
+    .search-box input{flex:1;border:none;background:transparent;color:#e9eef7;font-size:14px;padding:8px 0}
+    .search-box input:focus{outline:none}
+    .ghost-btn{background:#111520;color:#e9eef7;border:1px solid #2a2f3a;border-radius:10px;padding:8px 12px;cursor:pointer;font-size:13px}
+
+    .project-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:18px}
+    .project-card{background:var(--panel);border:1px solid #1f2330;border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:12px;transition:border-color .2s ease, transform .1s ease}
+    .project-card:hover{border-color:rgba(74,214,184,0.4);transform:translateY(-1px)}
+    .project-card h3{margin:0;font-size:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .project-card p{margin:0;color:var(--muted);font-size:13px;min-height:34px}
+    .project-meta{display:flex;flex-wrap:wrap;gap:8px;font-size:12px;color:#c6cede}
+    .tag{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:8px;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.08)}
+    .actions{display:flex;gap:8px}
+    .actions button{flex:1;padding:8px 0;border-radius:10px;border:1px solid #2a2f3a;background:#111520;color:#e9eef7;cursor:pointer;font-size:13px}
+    .actions button.primary{background:var(--accent);color:#061014;border-color:#2b8f80;font-weight:600}
+    .actions button.danger{background:rgba(255,93,93,0.18);color:#ffcfcf;border-color:rgba(255,93,93,0.4)}
+
+    .empty-state{display:none;align-items:center;justify-content:center;flex-direction:column;gap:12px;padding:60px 20px;border:1px dashed #2a2f3a;border-radius:14px;color:#c6cede;font-size:14px;background:rgba(17,21,32,0.6)}
+    .empty-state.active{display:flex}
+
+    .modal-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.65);align-items:center;justify-content:center;z-index:100}
+    .modal-backdrop.show{display:flex}
+    .modal{background:var(--panel);border:1px solid #1f2330;border-radius:16px;padding:20px 22px;min-width:320px;max-width:420px;box-shadow:0 24px 40px rgba(0,0,0,0.3);display:grid;gap:12px}
+    .modal h3{margin:0;font-size:18px}
+    .modal input,.modal textarea,.modal select{width:100%;padding:8px 10px;border-radius:10px;border:1px solid #343a47;background:#111520;color:#e9eef7;font-size:13px}
+    .modal textarea{resize:vertical;min-height:70px}
+    .mode-field{display:flex;flex-direction:column;gap:6px;}
+    .mode-field label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:0.04em;}
+    .mode-hint{margin:-6px 0 6px;color:var(--muted);font-size:12px;}
+    .modal-actions{display:flex;gap:10px}
+    .modal-actions button{flex:1;padding:9px 0;border-radius:10px;border:1px solid #2a2f3a;background:#111520;color:#e9eef7;cursor:pointer}
+    .modal-actions button.primary{background:var(--accent);color:#061014;font-weight:600}
+    .modal-actions button.danger{background:var(--danger);color:#fff;border-color:#7a1f1f}
+
+    @media (max-width:840px){
+      .app-header{flex-direction:column;align-items:flex-start}
+      .header-actions{width:100%;align-items:stretch}
+      .primary-btn{justify-content:center}
+    }
+  </style>
+</head>
+<body>
+<header class="app-header">
+  <div class="header-main">
+    <h1>Project overview</h1>
+    <p>Create datasets, train models, and revisit results any time.</p>
+  </div>
+  <div class="header-actions">
+    <div class="nav-links">
+      <a class="nav-btn" href="/ui/label.html">Label dataset</a>
+      <a class="nav-btn" href="/ui/models.html">Browse models</a>
+    </div>
+    <button class="primary-btn" id="newProjectBtn">+ New project</button>
+  </div>
+</header>
+
+<main class="page">
+  <section class="info-grid">
+    <div class="info-card">
+      <h3>Getting started</h3>
+      <ol class="step-list">
+        <li>Create a project and upload normal images.</li>
+        <li>Open the project to launch training and monitor progress.</li>
+        <li>Download the model or test anomaly images right away.</li>
+      </ol>
+    </div>
+    <div class="info-card">
+      <h3>At a glance</h3>
+      <ul class="summary-list">
+        <li><span class="label">Projects</span><span class="value" id="statTotal">0</span></li>
+        <li><span class="label">Images</span><span class="value" id="statImages">0</span></li>
+        <li><span class="label">With latest model</span><span class="value" id="statHasModel">0</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <div class="toolbar">
+    <div class="search-box">
+      <span style="font-size:14px;opacity:0.7">🔍</span>
+      <input type="text" id="searchInput" placeholder="Search by project name or description" />
+    </div>
+    <button class="ghost-btn" id="reloadBtn">Reload</button>
+  </div>
+
+  <div class="empty-state" id="emptyState">
+    <strong>No projects yet</strong>
+    <span>Create your first project to start uploading images and training models.</span>
+    <button class="primary-btn" id="emptyCreateBtn">+ Create project</button>
+  </div>
+
+  <div class="project-list" id="projectList"></div>
+</main>
+
+<div id="modal" class="modal-backdrop">
+  <div class="modal">
+    <h3>New project</h3>
+    <input id="projName" placeholder="Project name" />
+    <textarea id="projDesc" placeholder="Description (optional)"></textarea>
+    <div class="mode-field">
+      <label for="projMode">Training mode</label>
+      <select id="projMode">
+        <option value="anomaly" selected>Anomaly detection (default)</option>
+        <option value="finetune">Fine-tune existing model</option>
+        <option value="yolo">YOLO object detection</option>
+      </select>
+    </div>
+    <p class="mode-hint">Fine-tune continues an existing model with fresh images.</p>
+    <div class="modal-actions">
+      <button id="createBtn" class="primary">Create</button>
+      <button id="cancelBtn">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div id="deleteModal" class="modal-backdrop">
+  <div class="modal">
+    <h3>Delete project</h3>
+    <p style="margin:0;color:#ffb3b3;font-size:13px;">Deleting is permanent and cannot be undone.</p>
+    <p id="delProjectName" style="margin:8px 0 0 0;font-weight:600;"></p>
+    <p style="margin:6px 0 8px 0;color:#c6cede;font-size:12px;">Type <b id="delProjectNameInline"></b> to confirm.</p>
+    <input id="delConfirmInput" placeholder="Type the project name" />
+    <div class="modal-actions">
+      <button id="delCancelBtn">Cancel</button>
+      <button id="delConfirmBtn" class="danger" disabled>Delete permanently</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const API_BASE = '';
+const modal = document.getElementById('modal');
+const deleteModal = document.getElementById('deleteModal');
+const projectList = document.getElementById('projectList');
+const emptyState = document.getElementById('emptyState');
+const searchInput = document.getElementById('searchInput');
+const reloadBtn = document.getElementById('reloadBtn');
+const newProjectBtn = document.getElementById('newProjectBtn');
+const emptyCreateBtn = document.getElementById('emptyCreateBtn');
+const statTotal = document.getElementById('statTotal');
+const statImages = document.getElementById('statImages');
+const statHasModel = document.getElementById('statHasModel');
+
+const projName = document.getElementById('projName');
+const projDesc = document.getElementById('projDesc');
+const projMode = document.getElementById('projMode');
+const createBtn = document.getElementById('createBtn');
+const cancelBtn = document.getElementById('cancelBtn');
+
+const delProjectName = document.getElementById('delProjectName');
+const delProjectNameInline = document.getElementById('delProjectNameInline');
+const delConfirmInput = document.getElementById('delConfirmInput');
+const delCancelBtn = document.getElementById('delCancelBtn');
+const delConfirmBtn = document.getElementById('delConfirmBtn');
+
+let cachedProjects = [];
+let deleteState = { id: null, name: '' };
+
+function openCreateModal(){
+  modal.classList.add('show');
+  setTimeout(() => projName.focus(), 0);
+}
+
+function closeCreateModal(){
+  modal.classList.remove('show');
+  projName.value = '';
+  projDesc.value = '';
+  projMode.value = 'anomaly';
+}
+
+function openDeleteModal(proj){
+  deleteState = { id: proj.project_id, name: proj.name };
+  delProjectName.textContent = `Delete project "${proj.name}"?`;
+  delProjectNameInline.textContent = `"${proj.name}"`;
+  delConfirmInput.value = '';
+  delConfirmBtn.disabled = true;
+  deleteModal.classList.add('show');
+  setTimeout(() => delConfirmInput.focus(), 0);
+}
+
+function closeDeleteModal(){
+  deleteModal.classList.remove('show');
+}
+
+function toggleEmptyState(filteredCount){
+  if (!cachedProjects.length) {
+    emptyState.querySelector('strong').textContent = 'No projects yet';
+    emptyState.querySelector('span').textContent = 'Create your first project to start uploading images and training models.';
+    emptyState.classList.add('active');
+  } else if (filteredCount === 0) {
+    emptyState.querySelector('strong').textContent = 'No projects match';
+    emptyState.querySelector('span').textContent = 'Try another keyword or reload the list.';
+    emptyState.classList.add('active');
+  } else {
+    emptyState.classList.remove('active');
+  }
+}
+
+function updateStats(){
+  const total = cachedProjects.length;
+  const images = cachedProjects.reduce((sum, p) => sum + (p.num_images || 0), 0);
+  const withModel = cachedProjects.filter(p => p.last_model_id).length;
+  statTotal.textContent = `${total}`;
+  statImages.textContent = `${images}`;
+  statHasModel.textContent = `${withModel}`;
+}
+
+function formatDate(ts){
+  if (!ts) return '-';
+  const m = ts.match(/(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})/);
+  if (!m) return ts;
+  const [, y, mo, d, h, mi] = m;
+  return `${y}-${mo}-${d} ${h}:${mi}`;
+}
+
+function renderProjects(){
+  const query = searchInput.value.trim().toLowerCase();
+  const filtered = cachedProjects.filter(p => {
+    const name = (p.name || '').toLowerCase();
+    const desc = (p.description || '').toLowerCase();
+    return name.includes(query) || desc.includes(query);
+  });
+
+  projectList.innerHTML = '';
+  toggleEmptyState(filtered.length);
+  if (!filtered.length) return;
+
+  filtered.forEach(proj => {
+    const card = document.createElement('div');
+    card.className = 'project-card';
+    const mode = (proj.training_mode || 'anomaly').toLowerCase();
+    let modeLabel;
+    if (mode === 'finetune') {
+      modeLabel = '🔁 Fine-tune';
+    } else if (mode === 'yolo') {
+      modeLabel = '🎯 YOLO detection';
+    } else {
+      modeLabel = '🧪 Anomaly detection';
+    }
+    const hasModel = Boolean(proj.last_model_id);
+    card.dataset.mode = mode;
+    card.innerHTML = `
+      <h3 title="${proj.name}">${proj.name}</h3>
+      <p>${proj.description ? proj.description : '—'}</p>
+      <div class="project-meta">
+        <span class="tag mode-tag" title="Training mode">${modeLabel}</span>
+        <span class="tag">📷 ${proj.num_images} images</span>
+        <span class="tag" title="${hasModel ? proj.last_model_id : 'No model yet'}">${hasModel ? '🧠 Latest model available' : '🕒 No model yet'}</span>
+        <span class="tag">🗓 ${formatDate(proj.created_at)}</span>
+      </div>
+      <div class="actions">
+        <button class="primary">Open</button>
+        <button class="danger">Delete</button>
+      </div>
+    `;
+
+    card.querySelector('.primary').onclick = () => {
+      let target = '/ui/index.html';
+      if (mode === 'finetune') target = '/ui/fine_tune.html';
+      else if (mode === 'yolo') target = '/ui/yolo.html';
+      window.location.href = `${target}?projectId=${encodeURIComponent(proj.project_id)}`;
+    };
+    card.querySelector('.danger').onclick = () => openDeleteModal(proj);
+
+    projectList.appendChild(card);
+  });
+}
+
+async function loadProjects(){
+  try{
+    reloadBtn.disabled = true;
+    const res = await fetch(API_BASE + '/projects');
+    if (!res.ok) throw new Error(await res.text());
+    cachedProjects = await res.json();
+    updateStats();
+    renderProjects();
+  }catch(err){
+    console.error(err);
+    alert('Failed to load projects: ' + err);
+  }finally{
+    reloadBtn.disabled = false;
+  }
+}
+
+async function createProject(){
+  const name = projName.value.trim();
+  const description = projDesc.value.trim();
+  const training_mode = projMode.value || 'anomaly';
+  if (!name) {
+    alert('Please enter a project name');
+    projName.focus();
+    return;
+  }
+  createBtn.disabled = true;
+  createBtn.textContent = 'Creating…';
+  try{
+    const res = await fetch(API_BASE + '/projects', {
+      method:'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({name, description, training_mode})
+    });
+    if (!res.ok) throw new Error(await res.text());
+    closeCreateModal();
+    await loadProjects();
+  }catch(err){
+    alert('Failed to create project: ' + err);
+  }finally{
+    createBtn.disabled = false;
+    createBtn.textContent = 'Create';
+  }
+}
+
+function onDeleteInputChange(){
+  delConfirmBtn.disabled = (delConfirmInput.value !== deleteState.name);
+}
+
+delConfirmInput.addEventListener('input', onDeleteInputChange);
+delConfirmInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !delConfirmBtn.disabled) {
+    deleteProject();
+  }
+});
+
+async function deleteProject(){
+  if (!deleteState.id) return;
+  delConfirmBtn.disabled = true;
+  delConfirmBtn.textContent = 'Deleting…';
+  try{
+    const url = `${API_BASE}/projects/${encodeURIComponent(deleteState.id)}?confirm=${encodeURIComponent(deleteState.name)}`;
+    const res = await fetch(url, { method:'DELETE' });
+    if (!res.ok) throw new Error(await res.text());
+    closeDeleteModal();
+    await loadProjects();
+  }catch(err){
+    alert('Failed to delete project: ' + err);
+  }finally{
+    delConfirmBtn.disabled = false;
+    delConfirmBtn.textContent = 'Delete permanently';
+  }
+}
+
+newProjectBtn.addEventListener('click', openCreateModal);
+emptyCreateBtn.addEventListener('click', openCreateModal);
+cancelBtn.addEventListener('click', closeCreateModal);
+modal.addEventListener('click', (e) => { if (e.target === modal) closeCreateModal(); });
+createBtn.addEventListener('click', createProject);
+
+reloadBtn.addEventListener('click', loadProjects);
+searchInput.addEventListener('input', renderProjects);
+searchInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') renderProjects(); });
+
+delCancelBtn.addEventListener('click', closeDeleteModal);
+delConfirmBtn.addEventListener('click', deleteProject);
+deleteModal.addEventListener('click', (e) => { if (e.target === deleteModal) closeDeleteModal(); });
+
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    closeCreateModal();
+    closeDeleteModal();
+  }
+});
+
+loadProjects();
+</script>
+</body>
+</html>

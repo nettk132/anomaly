@@ -11,10 +11,14 @@ from uuid import uuid4
 import torch.nn as nn
 import torch.nn.functional as F
 
+from safetensors.torch import load_file as load_safetensors
+
 from ..models.autoencoder import ConvAE, build_autoencoder
 from .scoring import compute_anomaly_score
 from ..config import DATASETS_DIR, MODELS_DIR, PROJECTS_DIR
+from ..utils import PathTraversalError, safe_join, validate_slug
 from .storage import get_raw_dir, get_project_raw_dir
+from .yolo_training import MissingUltralyticsError
 
 # ----- utils -----
 def _robust_threshold(errs: np.ndarray) -> float:
@@ -134,57 +138,97 @@ def _extract_bboxes_from_heatmap(heatmap01: np.ndarray, out_hw: Tuple[int,int],
     return boxes[:max_boxes]
 
 # ----- core loading -----
-def _load_model_and_cfg(model_id: str, device: str):
-    """เน€เธโฌเน€เธยเธขยเน€เธโฌเน€เธยเน€เธยเน€เธโฌเน€เธยเน€เธโ€ฆเน€เธโฌเน€เธยเนโฌยเน€เธโฌเน€เธยเธขยเน€เธโฌเน€เธยเน€เธยเน€เธโฌเน€เธยเนยเธเน€เธโฌเน€เธยเนโฌยเน€เธโฌเน€เธยเน€เธโ€ฆเน€เธโฌเน€เธยเธขยเน€เธโฌเน€เธยเน€เธโ€เน€เธโฌเน€เธยเธขย scene-mode เน€เธโฌเน€เธยเน€เธยเน€เธโฌเน€เธยเน€เธยเน€เธโฌเน€เธยเน€เธโ€”เน€เธโฌเน€เธยเน€เธย project-mode เน€เธโฌเน€เธยเธขยเน€เธโฌเน€เธยเธขยเน€เธโฌเน€เธยเธขยเน€เธโฌเน€เธยเนโฌยเน€เธโฌเน€เธยเธขย เน€เธโฌเน€เธยเธขยเน€เธโฌเน€เธยเน€เธโ€ฆเน€เธโฌเน€เธยเน€เธยเน€เธโฌเน€เธยเธขยเน€เธโฌเน€เธยเน€เธโ€”เน€เธโฌเน€เธยเธขย raw_dir เน€เธโฌเน€เธยเน€เธยเน€เธโฌเน€เธยเน€เธโ€เน€เธโฌเน€เธยเน€เธยเน€เธโฌเน€เธยเน€เธยเน€เธโฌเน€เธยเน€เธโ€เน€เธโฌเน€เธยเธขย calibrate
+def _resolve_model_dir(model_id: str) -> Path:
+    validate_slug(model_id, name="model_id")
+    try:
+        return safe_join(MODELS_DIR, model_id, must_exist=True)
+    except (FileNotFoundError, PathTraversalError):
+        pass
+    if PROJECTS_DIR.exists():
+        for proj_dir in PROJECTS_DIR.iterdir():
+            if not proj_dir.is_dir():
+                continue
+            models_dir = proj_dir / 'models'
+            if models_dir.is_dir():
+                try:
+                    return safe_join(models_dir, model_id, must_exist=True)
+                except (FileNotFoundError, PathTraversalError):
+                    pass
+            imports_dir = proj_dir / 'imports'
+            if imports_dir.is_dir():
+                try:
+                    return safe_join(imports_dir, model_id, must_exist=True)
+                except (FileNotFoundError, PathTraversalError):
+                    pass
+    raise FileNotFoundError(f"Model dir not found: {model_id}")
 
-    return: (model, raw_dir_or_None, img_size, thr)
-    """
-    # 1) scene-mode
-    model_dir = MODELS_DIR / model_id
-    if not model_dir.exists():
-        # 2) project-mode: data/projects/*/models/<model_id>
-        for proj_dir in PROJECTS_DIR.iterdir() if PROJECTS_DIR.exists() else []:
-            cand = proj_dir / 'models' / model_id
-            if cand.exists():
-                model_dir = cand
-                break
-    if not model_dir.exists():
-        raise FileNotFoundError(f"Model dir not found: {model_dir}")
 
-    # config.yaml
-    with open(model_dir / "config.yaml", "r", encoding="utf-8") as f:
-        cfg = yaml.safe_load(f) or {}
-    img_size = int(cfg.get("img_size", 256))
+def _load_model_config(model_dir: Path) -> dict:
+    cfg_path = model_dir / 'config.yaml'
+    if not cfg_path.exists():
+        return {}
+    with cfg_path.open('r', encoding='utf-8') as f:
+        data = yaml.safe_load(f) or {}
+    if not isinstance(data, dict):
+        return {}
+    return data
 
-    # model.pt
-    state = torch.load(model_dir / "model.pt", map_location=device)
+
+def _load_autoencoder_from_dir(model_dir: Path, cfg: dict, device: str):
+    img_size = int(cfg.get('img_size', 256))
+    pt_path = model_dir / 'model.pt'
+    st_path = model_dir / 'model.safetensors'
+    if pt_path.exists():
+        state = torch.load(pt_path, map_location=device)
+    elif st_path.exists():
+        state = load_safetensors(st_path, device=device)
+    else:
+        raise FileNotFoundError(f"No model weights found under {model_dir}")
     model = build_autoencoder(state_dict=state).to(device).eval()
 
-    # threshold.json
     thr = 0.0
-    th_path = model_dir / "threshold.json"
+    th_path = model_dir / 'threshold.json'
     if th_path.exists():
         try:
-            with open(th_path, "r", encoding="utf-8") as f:
+            with th_path.open('r', encoding='utf-8') as f:
                 thj = json.load(f)
-            thr = float(thj.get("threshold_mse", thj.get("threshold_score", 0.0)))
         except Exception:
-            thr = 0.0
+            thj = {}
+        if isinstance(thj, dict):
+            if 'threshold_score' in thj:
+                try:
+                    thr = float(thj.get('threshold_score', 0.0))
+                except Exception:
+                    thr = 0.0
+            elif 'threshold_mse' in thj:
+                try:
+                    thr = float(thj.get('threshold_mse', 0.0))
+                except Exception:
+                    thr = 0.0
 
-    # resolve raw_dir for fallback calibrate
     raw_dir = None
-    if 'scene_id' in cfg and cfg['scene_id']:
+    if cfg.get('scene_id'):
         try:
             raw_dir = get_raw_dir(cfg['scene_id'])
         except Exception:
             raw_dir = None
-    elif 'project_id' in cfg and cfg['project_id']:
+    elif cfg.get('project_id'):
         try:
             raw_dir = get_project_raw_dir(cfg['project_id'])
         except Exception:
             raw_dir = None
 
     return model, raw_dir, img_size, thr
+
+
+def _load_model_and_cfg(model_id: str, device: str):
+    """Backward-compatible helper used by legacy inference paths.
+    Returns: (model, raw_dir_or_None, img_size, threshold)
+    """
+    model_dir = _resolve_model_dir(model_id)
+    cfg = _load_model_config(model_dir)
+    return _load_autoencoder_from_dir(model_dir, cfg, device)
+
 
 def _fallback_calibrate_threshold(raw_dir: Path, model: torch.nn.Module, img_size: int, device: str,
                                   limit: int = 64) -> float:
@@ -221,6 +265,7 @@ def _fallback_calibrate_threshold(raw_dir: Path, model: torch.nn.Module, img_siz
 
 # ----- public API used by main.py -----
 def test_images(model_id: str, models_root: Path, buf_list: List[Tuple[str, bytes]]):
+    validate_slug(model_id, name="model_id")
     """
     เน€เธโฌเน€เธยเธขยเน€เธโฌเน€เธยเน€เธโ€”เน€เธโฌเน€เธยเธขย list เน€เธโฌเน€เธยเธขยเน€เธโฌเน€เธยเน€เธยเน€เธโฌเน€เธยเธขย dict:
     {
@@ -231,7 +276,12 @@ def test_images(model_id: str, models_root: Path, buf_list: List[Tuple[str, byte
     URLs เน€เธโฌเน€เธยเธขยเน€เธโฌเน€เธยเน€เธโ€ขเน€เธโฌเน€เธยเธขยเน€เธโฌเน€เธยเธขยเน€เธโฌเน€เธยเธขยเน€เธโฌเน€เธยเนโฌโ€เน€เธโฌเน€เธยเน€เธโ€ขเน€เธโฌเน€เธยเธขย /static/preview/<model_id>/...
     """
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    model, raw_dir, img_size, thr = _load_model_and_cfg(model_id, device)
+    model_dir = _resolve_model_dir(model_id)
+    cfg = _load_model_config(model_dir)
+    training_mode = str(cfg.get("training_mode") or "anomaly").lower()
+    if training_mode == "yolo":
+        return _test_images_yolo(model_id, model_dir, cfg, buf_list, device)
+    model, raw_dir, img_size, thr = _load_autoencoder_from_dir(model_dir, cfg, device)
 
     # Fallback calibrate เน€เธโฌเน€เธยเนโฌโ€เน€เธโฌเน€เธยเธขยเน€เธโฌเน€เธยเน€เธโ€ threshold เน€เธโฌเน€เธยเนยเธเน€เธโฌเน€เธยเธขยเน€เธโฌเน€เธยเธขยเน€เธโฌเน€เธยเธขย 0/เน€เธโฌเน€เธยเน€เธยเน€เธโฌเน€เธยเน€เธโ€เน€เธโฌเน€เธยเน€เธย
     if thr <= 1e-12 and raw_dir is not None:
@@ -240,7 +290,10 @@ def test_images(model_id: str, models_root: Path, buf_list: List[Tuple[str, byte
     # ---- เน€เธโฌเน€เธยเธขยเน€เธโฌเน€เธยเธขยเน€เธโฌเน€เธยเน€เธโ€ฆเน€เธโฌเน€เธยเนยเธเน€เธโฌเน€เธยเนโฌยเน€เธโฌเน€เธยเน€เธยเน€เธโฌเน€เธยเน€เธยเน€เธโฌเน€เธยเธขยเน€เธโฌเน€เธยเธขยเน€เธโฌเน€เธยเน€เธยเน€เธโฌเน€เธยเน€เธโ€ขเน€เธโฌเน€เธยเน€เธยเน€เธโฌเน€เธยเน€เธโ€เน€เธโฌเน€เธยเน€เธย (เน€เธโฌเน€เธยเนยเธเน€เธโฌเน€เธยเน€เธยเน€เธโฌเน€เธยเน€เธโ€เน€เธโฌเน€เธยเน€เธยเน€เธโฌเน€เธยเธขยเน€เธโฌเน€เธยเธขยเน€เธโฌเน€เธยเธขยเน€เธโฌเน€เธยเธขยเน€เธโฌเน€เธยเน€เธโ€เน€เธโฌเน€เธยเธขย /static) ----
     # เน€เธโฌเน€เธยเธขยเน€เธโฌเน€เธยเธขยเน€เธโฌเน€เธยเธขย preview เน€เธโฌเน€เธยเนโฌโ€เน€เธโฌเน€เธยเน€เธโ€เน€เธโฌเน€เธยเธขยเน€เธโฌเน€เธยเธขยเน€เธโฌเน€เธยเธขยเน€เธโฌเน€เธยเธขยเน€เธโฌเน€เธยเน€เธโ€ฆเน€เธโฌเน€เธยเนยเธเน€เธโฌเน€เธยเนโฌยเน€เธโฌเน€เธยเน€เธยเน€เธโฌเน€เธยเน€เธยเน€เธโฌเน€เธยเธขยเน€เธโฌเน€เธยเธขยเน€เธโฌเน€เธยเน€เธโ€ฆเน€เธโฌเน€เธยเน€เธย URL เน€เธโฌเน€เธยเนยเธเน€เธโฌเน€เธยเธขยเน€เธโฌเน€เธยเน€เธโ€”เน€เธโฌเน€เธยเธขยเน€เธโฌเน€เธยเน€เธยเน€เธโฌเน€เธยเธขยเน€เธโฌเน€เธยเน€เธยเน€เธโฌเน€เธยเธขยเน€เธโฌเน€เธยเนโฌเธเน€เธโฌเน€เธยเน€เธยเน€เธโฌเน€เธยเธขยเน€เธโฌเน€เธยเธขยเน€เธโฌเน€เธยเน€เธโ€เน€เธโฌเน€เธยเธขย
     DATA_DIR   = DATASETS_DIR.parent  # data/
-    preview_dir = DATA_DIR / "preview" / model_id
+    try:
+        preview_dir = safe_join(DATA_DIR, "preview", model_id, must_exist=False)
+    except PathTraversalError as exc:
+        raise ValueError("invalid model_id") from exc
     preview_dir.mkdir(parents=True, exist_ok=True)
     base_url = f"/static/preview/{model_id}"
 
@@ -314,6 +367,151 @@ def test_images(model_id: str, models_root: Path, buf_list: List[Tuple[str, byte
             })
 
     return items
+
+
+
+def _test_images_yolo(model_id: str, model_dir: Path, cfg: dict, buf_list: List[Tuple[str, bytes]], device: str):
+    validate_slug(model_id, name="model_id")
+    try:
+        from ultralytics import YOLO
+    except ImportError as exc:  # pragma: no cover
+        raise MissingUltralyticsError("ultralytics package is required for YOLO inference. Install with 'pip install ultralytics'.") from exc
+
+    weights_path = model_dir / "model.pt"
+    if not weights_path.exists():
+        raise FileNotFoundError(f"model.pt not found under {model_dir}")
+
+    model = YOLO(str(weights_path))
+    yolo_cfg = cfg.get("yolo") or {}
+    try:
+        conf = float(yolo_cfg.get("conf_threshold", 0.25))
+    except Exception:
+        conf = 0.25
+    try:
+        iou = float(yolo_cfg.get("iou_threshold", 0.45))
+    except Exception:
+        iou = 0.45
+
+    classes = yolo_cfg.get("classes") or yolo_cfg.get("class_names") or []
+    if isinstance(classes, dict):
+        classes = [str(classes[k]) for k in sorted(classes.keys())]
+    elif not isinstance(classes, list):
+        classes = []
+    classes = [str(c) for c in classes]
+    if not classes:
+        names = getattr(model, "names", None)
+        if isinstance(names, dict):
+            classes = [str(names[k]) for k in sorted(names.keys())]
+        elif isinstance(names, list):
+            classes = [str(n) for n in names]
+
+    data_dir = DATASETS_DIR.parent
+    try:
+        preview_dir = safe_join(data_dir, "preview", model_id, must_exist=False)
+    except PathTraversalError as exc:
+        raise ValueError("invalid model_id") from exc
+    preview_dir.mkdir(parents=True, exist_ok=True)
+    base_url = f"/static/preview/{model_id}"
+
+    items = []
+    for fname, content in buf_list:
+        arr = np.frombuffer(content, dtype=np.uint8)
+        bgr = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+        if bgr is None:
+            items.append({
+                "filename": fname,
+                "score": None,
+                "thr": float(conf),
+                "is_anomaly": None,
+                "image_url": None,
+                "heatmap_url": None,
+                "overlay_url": None,
+                "result_image": None,
+                "threshold": float(conf),
+                "bboxes": None,
+                "detections": None,
+                "error": "cannot decode image",
+            })
+            continue
+
+        try:
+            results = model.predict(bgr, conf=conf, iou=iou, device=device, verbose=False)
+        except Exception as exc:  # pragma: no cover
+            items.append({
+                "filename": fname,
+                "score": None,
+                "thr": float(conf),
+                "is_anomaly": None,
+                "image_url": None,
+                "heatmap_url": None,
+                "overlay_url": None,
+                "result_image": None,
+                "threshold": float(conf),
+                "bboxes": None,
+                "detections": None,
+                "error": f"inference failed: {exc}",
+            })
+            continue
+
+        res = results[0] if isinstance(results, (list, tuple)) else results
+        boxes = getattr(res, "boxes", None)
+        detections = []
+        int_bboxes = []
+        max_conf = 0.0
+        overlay = bgr.copy()
+        if boxes is not None and len(boxes):
+            xyxy = boxes.xyxy.cpu().numpy() if hasattr(boxes.xyxy, "cpu") else boxes.xyxy
+            confs = boxes.conf.cpu().numpy() if getattr(boxes, "conf", None) is not None else np.zeros(len(xyxy), dtype=np.float32)
+            clses = boxes.cls.cpu().numpy() if getattr(boxes, "cls", None) is not None else np.zeros(len(xyxy), dtype=np.float32)
+            for idx in range(len(xyxy)):
+                x1, y1, x2, y2 = xyxy[idx]
+                conf_val = float(confs[idx]) if idx < len(confs) else 0.0
+                max_conf = max(max_conf, conf_val)
+                cls_idx = int(clses[idx]) if idx < len(clses) else 0
+                label = classes[cls_idx] if 0 <= cls_idx < len(classes) else str(cls_idx)
+                detections.append({
+                    "label": label,
+                    "confidence": conf_val,
+                    "bbox": [float(x1), float(y1), float(x2), float(y2)],
+                    "box_format": "xyxy",
+                })
+                box_w = int(max(1.0, x2 - x1))
+                box_h = int(max(1.0, y2 - y1))
+                int_box = (int(x1), int(y1), box_w, box_h)
+                int_bboxes.append(int_box)
+                color = (0, 255, 0)
+                cv2.rectangle(overlay, (int(x1), int(y1)), (int(x2), int(y2)), color, 2)
+                cv2.putText(overlay, f"{label} {conf_val:.2f}", (int(x1), max(0, int(y1) - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1, cv2.LINE_AA)
+        else:
+            max_conf = 0.0
+
+        stem = Path(fname).stem
+        input_path = preview_dir / f"{stem}_input.jpg"
+        overlay_path = preview_dir / f"{stem}_overlay.jpg"
+        _save_jpeg(input_path, bgr)
+        _save_jpeg(overlay_path, overlay)
+
+        version = f"?v={uuid4().hex}"
+        img_url = f"{base_url}/{stem}_input.jpg{version}"
+        overlay_url = f"{base_url}/{stem}_overlay.jpg{version}"
+
+        items.append({
+            "filename": fname,
+            "score": float(max_conf),
+            "thr": float(conf),
+            "is_anomaly": None,
+            "image_url": img_url,
+            "heatmap_url": None,
+            "overlay_url": overlay_url,
+            "result_image": overlay_url,
+            "threshold": float(conf),
+            "bboxes": int_bboxes or None,
+            "detections": detections or None,
+            "error": None,
+        })
+
+    return items
+
 
 
 

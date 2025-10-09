@@ -67,7 +67,7 @@ def _collect_from_dir(model_dir: Path, mode: str, *, scene_id: Optional[str] = N
         training_mode = training_mode.lower()
     else:
         training_mode = None
-    if mode == 'project' and training_mode not in ('anomaly', 'finetune'):
+    if mode == 'project' and training_mode not in ('anomaly', 'finetune', 'yolo'):
         training_mode = 'anomaly'
     info = {
         'model_id': model_dir.name,

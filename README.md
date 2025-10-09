@@ -10,6 +10,7 @@ scene_id workflow and a newer project-centric flow with lightweight HTML pages u
 - Automatic threshold calibration on validation data and downloadable model artifacts.
 - Inference endpoint returns anomaly scores, heatmaps, and overlay images with optional bounding boxes.
 - Simple job tracker (/jobs/{job_id}) and static file hosting for previews and saved models.
+- Optional YOLO object-detection workflow with dataset upload, training, and inference UI.
 
 ## Requirements
 - Python 3.10 or newer (tested on 3.11).
@@ -49,7 +50,7 @@ scene_id workflow and a newer project-centric flow with lightweight HTML pages u
    ```bash
    uvicorn app.main:app --reload --port 8000
    ```
-5. Open http://localhost:8000/ui/projects.html (if the ui/ folder is present) or inspect
+5. Open http://localhost:8000/ui/projects (if the ui/ folder is present) or inspect
    the OpenAPI docs at http://localhost:8000/docs.
 
 ## Configuration
@@ -157,3 +158,14 @@ Distributed under the MIT License. See [`LICENSE`](./LICENSE) for details.
 - สามารถกำหนดค่าระบบผ่านไฟล์ `config.yaml` (ดูตัวอย่างใน `config.example.yaml`) หรือใช้ environment variables ที่ขึ้นต้นด้วย `APP_` เช่น `APP_DATA_DIR`.
 - ระบบอัปโหลดตรวจสอบนามสกุลและจำกัดขนาดไฟล์ต่อไฟล์/รวมในแต่ละคำขอเพื่อป้องกันการใช้ทรัพยากรเกิน.
 - เพิ่มคำสั่งทดสอบด้วย `pytest` แล้ว หากพัฒนา feature ใหม่ควรเขียน unit test เพิ่มทุกครั้ง.
+
+## YOLO Object Detection Workflow
+
+Projects can now be created in a **YOLO** training mode to handle annotated object-detection datasets. Upload a ZIP archive that contains `train/images`, `train/labels`, and optional `val/…` folders (standard YOLO format). The new `/ui/yolo.html` page lets you:
+
+- Inspect dataset health and class names after upload.
+- Configure Ultralytics YOLO variants, epochs, and thresholds.
+- Launch training jobs that run in the existing background queue.
+- Download trained weights and run detection tests from the browser.
+
+The backend exposes helper endpoints under `/projects/{project_id}/yolo/*` for dataset management and training, and uses the `ultralytics` package under the hood.

@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <link rel="icon" href="/ui/favicon.ico?v=1">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Label dataset - Anomaly Detection</title>
+  <style>
+    :root { --bg:#0f1115; --panel:#171a21; --muted:#7f8aa3; --accent:#4ad6b8; --danger:#ff5d5d; --ok:#74d680; }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:#e9eef7;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,"Noto Sans",sans-serif;line-height:1.55}
+    a{color:inherit;text-decoration:none}
+
+    header{display:flex;justify-content:space-between;align-items:center;padding:18px 26px;background:linear-gradient(180deg,rgba(19,22,30,0.92),rgba(19,22,30,0.6));border-bottom:1px solid #20232d;gap:16px;position:sticky;top:0;z-index:9}
+    header h1{margin:0;font-size:22px}
+    header p{margin:2px 0 0;color:var(--muted);font-size:13px}
+    .header-main{display:flex;flex-direction:column;gap:4px}
+    .header-actions{display:flex;flex-wrap:wrap;gap:8px}
+    .nav-btn{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:10px;border:1px solid rgba(74,214,184,0.35);background:rgba(74,214,184,0.12);color:var(--accent);font-size:13px;font-weight:600;cursor:pointer;transition:background .2s ease,transform .2s ease}
+    .nav-btn:hover{background:rgba(74,214,184,0.25);transform:translateY(-1px)}
+
+    main.page{display:grid;grid-template-columns:320px 1fr;gap:18px;padding:22px 26px 32px}
+    .card{background:var(--panel);border:1px solid #1f2330;border-radius:14px;padding:16px 18px;box-shadow:0 16px 32px rgba(0,0,0,0.22);display:flex;flex-direction:column;gap:12px}
+    .card h3{margin:0;font-size:15px}
+    .muted{color:var(--muted);font-size:12px}
+    select,input,button,textarea{font-family:inherit}
+    select,input[type=number],input[type=text]{width:100%;padding:8px 10px;border-radius:10px;border:1px solid #2a2f3a;background:#10141d;color:#e9eef7;font-size:13px}
+    button{padding:9px 14px;border-radius:10px;border:1px solid #2a2f3a;background:#10141d;color:#e9eef7;font-size:13px;cursor:pointer;transition:transform .15s ease,background .15s ease}
+    button.primary{background:var(--accent);color:#071015;border-color:#2b8f80;font-weight:600}
+    button.warn{background:rgba(255,93,93,0.18);border-color:rgba(255,93,93,0.4);color:#ffcfcf}
+    button:hover:not(:disabled){transform:translateY(-1px)}
+    button:disabled{opacity:0.55;cursor:not-allowed;transform:none}
+    label.small{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:0.04em}
+
+    .sidebar{display:grid;gap:16px;align-content:start}
+    .image-list{max-height:420px;overflow:auto;display:grid;gap:8px;padding-right:4px}
+    .image-item{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;background:#111621;border:1px solid #252b38;text-align:left;color:#e9eef7;font-size:12px;cursor:pointer;transition:background .15s ease,border-color .15s ease}
+    .image-item:hover{background:#161c29}
+    .image-item.active{border-color:rgba(74,214,184,0.55);background:rgba(74,214,184,0.12)}
+    .image-item span.name{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .image-item span.badge{font-size:11px;padding:2px 6px;border-radius:999px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.1)}
+    .image-item span.badge.ok{color:var(--accent);border-color:rgba(74,214,184,0.5)}
+
+    .stage-card{gap:14px}
+    .stage-toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between}
+    .stage-toolbar .left, .stage-toolbar .right{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    .image-stage{position:relative;background:#0d1018;border:1px solid #252b38;border-radius:12px;padding:12px;display:flex;align-items:center;justify-content:center;min-height:320px}
+    .image-stage-inner{position:relative;max-width:100%;max-height:540px;display:inline-block}
+    #imageView{display:block;max-width:100%;max-height:540px;border-radius:10px;box-shadow:0 16px 32px rgba(0,0,0,0.35);position:relative;z-index:1}
+    #drawCanvas{position:absolute;left:0;top:0;cursor:crosshair;z-index:2}
+    .hint{font-size:12px;color:var(--muted)}
+
+    .chips{display:flex;flex-wrap:wrap;gap:6px}
+    .chip{padding:3px 9px;border-radius:999px;border:1px solid rgba(74,214,184,0.35);background:rgba(74,214,184,0.14);color:var(--accent);font-size:11px;cursor:pointer}
+    .chip:hover{background:rgba(74,214,184,0.26)}
+
+    .box-list{display:grid;gap:8px;max-height:220px;overflow:auto;padding-right:4px}
+    .box-item{border:1px solid #273041;border-radius:10px;padding:10px;display:grid;gap:8px;background:#10141d}
+    .box-head{display:flex;justify-content:space-between;align-items:center;gap:10px}
+    .color-dot{width:12px;height:12px;border-radius:999px;background:var(--accent);border:1px solid rgba(0,0,0,0.4)}
+    .box-head span{font-size:12px;color:#cdd3e0}
+    .box-actions{display:flex;gap:6px}
+    .box-actions button{padding:4px 8px;font-size:11px;border-radius:8px}
+
+    .training-card .form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
+    .training-card label{font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:4px}
+
+    .status-bar{font-size:12px;color:var(--muted);display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
+
+    .empty{padding:10px;border:1px dashed #2a2f3a;border-radius:10px;text-align:center;color:var(--muted);font-size:12px}
+
+    @media (max-width:1080px){
+      main.page{grid-template-columns:1fr;grid-template-rows:auto auto;gap:20px}
+      .sidebar{grid-template-columns:repeat(auto-fit,minmax(260px,1fr));grid-auto-rows:auto}
+    }
+
+    @media (max-width:720px){
+      header{flex-direction:column;align-items:flex-start}
+      .stage-toolbar{flex-direction:column;align-items:flex-start}
+      .stage-toolbar .right{justify-content:flex-start}
+    }
+  </style>
+</head>
+<body>
+<header>
+  <div class="header-main">
+    <h1>Label dataset</h1>
+    <p>Draw bounding boxes, assign classes, then launch training when ready.</p>
+  </div>
+  <div class="header-actions">
+    <button class="nav-btn" onclick="window.location.href='/ui/projects'">← Projects</button>
+    <button class="nav-btn" onclick="window.location.href='/ui/models.html'">Models</button>
+  </div>
+</header>
+<main class="page">
+  <aside class="sidebar">
+    <section class="card">
+      <h3>1) Choose project</h3>
+      <div>
+        <label class="small" for="projectSelect">Project</label>
+        <select id="projectSelect">
+          <option value="">-- select project --</option>
+        </select>
+      </div>
+      <div class="muted" id="projectSummary">Pick a project that already has uploaded images.</div>
+    </section>
+    <section class="card">
+      <h3>2) Images</h3>
+      <div class="status-bar">
+        <span id="imageCounter">No project selected</span>
+        <span id="labelStats">–</span>
+      </div>
+      <div class="image-list" id="imageList"></div>
+    </section>
+    <section class="card training-card">
+      <h3>3) Train a model</h3>
+      <div class="muted" id="trainHint">Select a project to see training options.</div>
+      <div class="form-grid">
+        <label>Base model
+          <select id="baseModelSelect">
+            <option value="">(auto)</option>
+          </select>
+        </label>
+        <label>Image size
+          <input type="number" id="trainImgSize" value="256" min="64" step="32">
+        </label>
+        <label>Epochs
+          <input type="number" id="trainEpochs" value="30" min="1" step="1">
+        </label>
+        <label>Learning rate
+          <input type="number" id="trainLr" value="0.0001" min="0.000001" step="0.0001">
+        </label>
+      </div>
+      <div class="status-bar">
+        <span id="trainStatus">—</span>
+        <button class="primary" id="btnStartTrain" disabled>Start training</button>
+      </div>
+    </section>
+  </aside>
+
+  <section class="card stage-card">
+    <div class="stage-toolbar">
+      <div class="left">
+        <button id="btnPrev" disabled>⟵ Prev</button>
+        <button id="btnNext" disabled>Next ⟶</button>
+        <strong id="currentImageName" style="font-size:13px"></strong>
+      </div>
+      <div class="right">
+        <button id="btnClearBoxes" disabled>Clear boxes</button>
+        <button class="primary" id="btnSaveLabels" disabled>Save labels</button>
+      </div>
+    </div>
+    <div class="image-stage">
+      <div class="image-stage-inner">
+        <img id="imageView" alt="Preview">
+        <canvas id="drawCanvas"></canvas>
+      </div>
+    </div>
+    <div class="hint">Click and drag on the image to draw a bounding box. Select a box below to edit the label. Hover a chip to reuse a class quickly.</div>
+    <div>
+      <div class="chips" id="classChips"></div>
+    </div>
+    <section>
+      <h3 style="margin-top:4px">Boxes</h3>
+      <div class="box-list" id="boxList">
+        <div class="empty">No boxes yet. Draw on the image to add one.</div>
+      </div>
+    </section>
+  </section>
+</main>
+<script>
+const API_BASE = window.location.origin;
+const projectSelect = document.getElementById('projectSelect');
+const projectSummary = document.getElementById('projectSummary');
+const imageListEl = document.getElementById('imageList');
+const imageCounter = document.getElementById('imageCounter');
+const labelStats = document.getElementById('labelStats');
+const imageView = document.getElementById('imageView');
+const drawCanvas = document.getElementById('drawCanvas');
+const boxList = document.getElementById('boxList');
+const classChips = document.getElementById('classChips');
+const btnPrev = document.getElementById('btnPrev');
+const btnNext = document.getElementById('btnNext');
+const btnSave = document.getElementById('btnSaveLabels');
+const btnClear = document.getElementById('btnClearBoxes');
+const currentImageName = document.getElementById('currentImageName');
+const baseModelSelect = document.getElementById('baseModelSelect');
+const btnStartTrain = document.getElementById('btnStartTrain');
+const trainImgSize = document.getElementById('trainImgSize');
+const trainEpochs = document.getElementById('trainEpochs');
+const trainLr = document.getElementById('trainLr');
+const trainHint = document.getElementById('trainHint');
+const trainStatus = document.getElementById('trainStatus');
+
+let projects = [];
+let currentProjectId = null;
+let projectMeta = null;
+let projectImages = [];
+let projectLabels = new Map();
+let projectClasses = [];
+let currentIndex = -1;
+let currentBoxes = [];
+let imageNaturalWidth = 0;
+let imageNaturalHeight = 0;
+let drawingStart = null;
+let draftBox = null;
+let activeBoxId = null;
+
+const ctx = drawCanvas.getContext('2d');
+
+function errorMessage(err){
+  if (!err) return 'Unknown error';
+  if (typeof err === 'string') return err;
+  if (err.detail) return String(err.detail);
+  if (err.message) return err.message;
+  try {
+    return JSON.stringify(err);
+  } catch (jsonErr) {
+    return String(err);
+  }
+}
+
+function colorForLabel(label){
+  const palette = ['#4ad6b8','#74d680','#ffa94d','#ffa8c2','#5aa9ff','#c792ea','#f7b32b','#ff6b6b','#50c5b7'];
+  let hash = 0;
+  for (let i = 0; i < label.length; i++) {
+    hash = (hash * 31 + label.charCodeAt(i)) & 0xffffffff;
+  }
+  const idx = Math.abs(hash) % palette.length;
+  return palette[idx];
+}
+
+function makeBoxId(){
+  if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+  return 'box-' + Date.now() + '-' + Math.round(Math.random()*1e6);
+}
+
+async function loadProjects(){
+  try{
+    const res = await fetch(`${API_BASE}/projects`);
+    if (!res.ok) throw new Error(await res.text());
+    projects = await res.json();
+    renderProjectOptions();
+  }catch(err){
+    console.error(err);
+    alert('Failed to load projects: ' + errorMessage(err));
+  }
+}
+
+function renderProjectOptions(){
+  const options = ['<option value="">-- select project --</option>'];
+  projects.forEach(p => {
+    options.push(`<option value="${p.project_id}">${p.name} (${p.training_mode})</option>`);
+  });
+  projectSelect.innerHTML = options.join('');
+}
+
+async function onProjectChange(){
+  const pid = projectSelect.value;
+  currentProjectId = pid || null;
+  projectMeta = null;
+  projectImages = [];
+  projectLabels = new Map();
+  projectClasses = [];
+  currentIndex = -1;
+  currentBoxes = [];
+  imageNaturalWidth = 0;
+  imageNaturalHeight = 0;
+  updateImageUI();
+  renderBoxList();
+  renderClassChips();
+  updateTrainingUI();
+  if (!pid) {
+    projectSummary.textContent = 'Pick a project that already has uploaded images.';
+    return;
+  }
+  projectSummary.textContent = 'Loading project…';
+  try{
+    const [meta, images] = await Promise.all([
+      fetchProjectMeta(pid),
+      fetchProjectImages(pid),
+    ]);
+    projectMeta = meta;
+    projectImages = images;
+    await fetchProjectLabels(pid);
+    await loadProjectModels(pid);
+    projectSummary.textContent = `${meta.name} · ${meta.num_images} image(s) · mode: ${meta.training_mode}`;
+    updateImageUI();
+    renderClassChips();
+    updateTrainingUI();
+    if (projectImages.length) {
+      selectImage(0);
+    }
+  }catch(err){
+    console.error(err);
+    alert('Failed to load project: ' + errorMessage(err));
+    projectSummary.textContent = 'Failed to load project.';
+  }
+}
+
+async function fetchProjectMeta(pid){
+  const res = await fetch(`${API_BASE}/projects/${encodeURIComponent(pid)}`);
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.detail || res.statusText);
+  return data;
+}
+
+async function fetchProjectImages(pid){
+  const res = await fetch(`${API_BASE}/projects/${encodeURIComponent(pid)}/images`);
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.detail || res.statusText);
+  const items = Array.isArray(data.items) ? data.items : [];
+  items.sort((a,b) => (a.filename || '').localeCompare(b.filename || ''));
+  return items;
+}
+
+async function fetchProjectLabels(pid){
+  const res = await fetch(`${API_BASE}/projects/${encodeURIComponent(pid)}/labels`);
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.detail || res.statusText);
+  projectLabels = new Map();
+  projectClasses = Array.isArray(data.classes) ? data.classes.slice().sort() : [];
+  if (Array.isArray(data.items)) {
+    data.items.forEach(item => {
+      if (item && item.filename) {
+        projectLabels.set(item.filename, item);
+      }
+    });
+  }
+  renderClassChips();
+}
+
+async function loadProjectModels(pid){
+  const url = `${API_BASE}/models?mode=project&project_id=${encodeURIComponent(pid)}`;
+  const res = await fetch(url);
+  const items = await res.json();
+  if (!res.ok) throw new Error(items.detail || res.statusText);
+  renderModelOptions(items);
+}
+
+function renderModelOptions(items){
+  const options = ['<option value="">(auto / none)</option>'];
+  if (Array.isArray(items)) {
+    items.forEach(m => {
+      const label = `${m.model_id}${m.note ? ' · ' + m.note : ''}`;
+      options.push(`<option value="${m.model_id}">${label}</option>`);
+    });
+  }
+  baseModelSelect.innerHTML = options.join('');
+}
+
+function updateImageUI(){
+  imageListEl.innerHTML = '';
+  if (!currentProjectId) {
+    imageCounter.textContent = 'No project selected';
+    labelStats.textContent = '–';
+    return;
+  }
+  if (!projectImages.length) {
+    imageCounter.textContent = 'No images yet';
+    labelStats.textContent = '—';
+    imageListEl.innerHTML = '<div class="empty">Upload images to this project first.</div>';
+    return;
+  }
+  imageCounter.textContent = `Images: ${projectImages.length}`;
+  let labeledCount = 0;
+  const frag = document.createDocumentFragment();
+  projectImages.forEach((img, idx) => {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'image-item' + (idx === currentIndex ? ' active' : '');
+    const info = projectLabels.get(img.filename);
+    const hasBoxes = info && Array.isArray(info.boxes) && info.boxes.length > 0;
+    if (hasBoxes) labeledCount++;
+    item.innerHTML = `<span class="name">${img.filename}</span><span class="badge ${hasBoxes ? 'ok' : ''}">${hasBoxes ? 'labeled' : '—'}</span>`;
+    item.addEventListener('click', () => selectImage(idx));
+    frag.appendChild(item);
+  });
+  labelStats.textContent = `${labeledCount} labeled • ${projectClasses.length} class(es)`;
+  imageListEl.appendChild(frag);
+  btnPrev.disabled = currentIndex <= 0;
+  btnNext.disabled = currentIndex < 0 || currentIndex >= projectImages.length - 1;
+}
+
+function selectImage(idx){
+  if (idx < 0 || idx >= projectImages.length) return;
+  currentIndex = idx;
+  const img = projectImages[idx];
+  currentBoxes = [];
+  imageNaturalWidth = 0;
+  imageNaturalHeight = 0;
+  drawingStart = null;
+  draftBox = null;
+  activeBoxId = null;
+  currentImageName.textContent = img.filename;
+  btnSave.disabled = false;
+  btnClear.disabled = false;
+  btnPrev.disabled = idx === 0;
+  btnNext.disabled = idx === projectImages.length - 1;
+  const src = `${API_BASE}${img.url}`;
+  imageView.src = src;
+  syncCanvasSize();
+  loadSavedBoxes(img.filename);
+  updateImageUI();
+}
+
+function loadSavedBoxes(filename){
+  const entry = projectLabels.get(filename);
+  if (entry && Array.isArray(entry.boxes)) {
+    currentBoxes = entry.boxes.map(box => ({
+      id: box.id || makeBoxId(),
+      label: box.label || '',
+      x: box.x ?? 0,
+      y: box.y ?? 0,
+      width: box.width ?? 0,
+      height: box.height ?? 0,
+    }));
+  } else {
+    currentBoxes = [];
+  }
+  renderBoxList();
+  renderBoxes();
+}
+
+function renderClassChips(){
+  classChips.innerHTML = '';
+  if (!projectClasses.length) {
+    classChips.innerHTML = '<span class="muted">No saved classes yet.</span>';
+    return;
+  }
+  projectClasses.forEach(label => {
+    const chip = document.createElement('span');
+    chip.className = 'chip';
+    chip.style.borderColor = colorForLabel(label) + '66';
+    chip.textContent = label;
+    chip.title = 'Apply to the focused box';
+    chip.addEventListener('click', () => {
+      if (!activeBoxId) return;
+      const box = currentBoxes.find(b => b.id === activeBoxId);
+      if (box) {
+        box.label = label;
+        renderBoxList();
+        renderBoxes();
+        saveBoxDraft();
+      }
+    });
+    classChips.appendChild(chip);
+  });
+}
+
+imageView.addEventListener('load', () => {
+  imageNaturalWidth = imageView.naturalWidth || 0;
+  imageNaturalHeight = imageView.naturalHeight || 0;
+  setTimeout(syncCanvasSize, 10);
+});
+
+window.addEventListener('resize', () => {
+  syncCanvasSize();
+  renderBoxes();
+});
+
+function getCanvasSize(){
+  const rect = imageView.getBoundingClientRect();
+  const width = Math.max(1, Math.round(rect.width));
+  const height = Math.max(1, Math.round(rect.height));
+  return { width, height };
+}
+
+function syncCanvasSize(){
+  const { width, height } = getCanvasSize();
+  drawCanvas.width = width;
+  drawCanvas.height = height;
+  drawCanvas.style.width = width + 'px';
+  drawCanvas.style.height = height + 'px';
+}
+
+drawCanvas.addEventListener('mousedown', (e) => {
+  if (!imageNaturalWidth || !imageNaturalHeight) return;
+  const {offsetX, offsetY} = e;
+  drawingStart = { x: offsetX, y: offsetY };
+  draftBox = { x1: offsetX, y1: offsetY, x2: offsetX, y2: offsetY };
+});
+
+drawCanvas.addEventListener('mousemove', (e) => {
+  if (!drawingStart) return;
+  draftBox.x2 = clamp(e.offsetX, 0, drawCanvas.width);
+  draftBox.y2 = clamp(e.offsetY, 0, drawCanvas.height);
+  renderBoxes();
+});
+
+function clamp(val, min, max){
+  return Math.max(min, Math.min(max, val));
+}
+
+function finalizeDraft(){
+  if (!draftBox) return;
+  const { width, height } = getCanvasSize();
+  const x1 = clamp(Math.min(draftBox.x1, draftBox.x2), 0, width);
+  const y1 = clamp(Math.min(draftBox.y1, draftBox.y2), 0, height);
+  const x2 = clamp(Math.max(draftBox.x1, draftBox.x2), 0, width);
+  const y2 = clamp(Math.max(draftBox.y1, draftBox.y2), 0, height);
+  const w = x2 - x1;
+  const h = y2 - y1;
+  draftBox = null;
+  drawingStart = null;
+  if (w < 6 || h < 6) {
+    renderBoxes();
+    return;
+  }
+  const nx = x1 / width;
+  const ny = y1 / height;
+  const nw = w / width;
+  const nh = h / height;
+  const box = { id: makeBoxId(), label: '', x: nx, y: ny, width: nw, height: nh };
+  currentBoxes.push(box);
+  activeBoxId = box.id;
+  renderBoxList();
+  renderBoxes();
+  focusBoxInput(box.id);
+}
+
+drawCanvas.addEventListener('mouseup', finalizeDraft);
+drawCanvas.addEventListener('mouseleave', () => {
+  if (drawingStart) finalizeDraft();
+});
+
+function renderBoxes(){
+  ctx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+  const { width, height } = getCanvasSize();
+  ctx.lineWidth = 2;
+  currentBoxes.forEach(box => {
+    const color = colorForLabel(box.label || box.id);
+    const x = box.x * width;
+    const y = box.y * height;
+    const w = box.width * width;
+    const h = box.height * height;
+    ctx.beginPath();
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = 0.28;
+    ctx.fillStyle = color;
+    ctx.fillRect(x, y, w, h);
+    ctx.globalAlpha = 1;
+    ctx.lineWidth = box.id === activeBoxId ? 3 : 2;
+    ctx.strokeRect(x, y, w, h);
+    const labelText = box.label && box.label.trim() ? box.label : '(label)';
+    ctx.font = '12px system-ui';
+    const textWidth = ctx.measureText(labelText).width + 10;
+    let rectWidth = Math.max(textWidth, 52);
+    if (rectWidth > width) rectWidth = width - 6;
+    let rectX = x;
+    let rectY = y - 20;
+    if (rectX + rectWidth > width) rectX = Math.max(0, width - rectWidth - 4);
+    if (rectY < 4) {
+      rectY = y + h + 4;
+      if (rectY + 18 > height) rectY = height - 22;
+    }
+    ctx.fillStyle = '#0b0f17';
+    ctx.fillRect(rectX, rectY, rectWidth, 18);
+    ctx.fillStyle = '#f5faff';
+    ctx.fillText(labelText, rectX + 4, rectY + 13);
+  });
+  if (draftBox) {
+    const x = Math.min(draftBox.x1, draftBox.x2);
+    const y = Math.min(draftBox.y1, draftBox.y2);
+    const w = Math.abs(draftBox.x1 - draftBox.x2);
+    const h = Math.abs(draftBox.y1 - draftBox.y2);
+    ctx.save();
+    ctx.strokeStyle = '#ffffffaa';
+    ctx.setLineDash([6, 4]);
+    ctx.strokeRect(x, y, w, h);
+    ctx.restore();
+  }
+}
+
+function renderBoxList(){
+  boxList.innerHTML = '';
+  if (!currentBoxes.length) {
+    boxList.innerHTML = '<div class="empty">No boxes yet. Draw on the image to add one.</div>';
+    btnClear.disabled = true;
+    return;
+  }
+  btnClear.disabled = false;
+  const frag = document.createDocumentFragment();
+  currentBoxes.forEach((box, idx) => {
+    const item = document.createElement('div');
+    item.className = 'box-item';
+    if (box.id === activeBoxId) item.style.borderColor = 'rgba(74,214,184,0.6)';
+    const color = colorForLabel(box.label || box.id);
+    const head = document.createElement('div');
+    head.className = 'box-head';
+    const left = document.createElement('div');
+    left.style.display = 'flex';
+    left.style.alignItems = 'center';
+    left.style.gap = '8px';
+    const dot = document.createElement('span');
+    dot.className = 'color-dot';
+    dot.style.background = color;
+    left.appendChild(dot);
+    const label = document.createElement('span');
+    label.textContent = `Box ${idx + 1}`;
+    left.appendChild(label);
+    head.appendChild(left);
+    const actions = document.createElement('div');
+    actions.className = 'box-actions';
+    const focusBtn = document.createElement('button');
+    focusBtn.textContent = 'Focus';
+    focusBtn.type = 'button';
+    focusBtn.addEventListener('click', () => {
+      activeBoxId = box.id;
+      renderBoxList();
+      renderBoxes();
+      focusBoxInput(box.id);
+    });
+    const deleteBtn = document.createElement('button');
+    deleteBtn.textContent = 'Delete';
+    deleteBtn.className = 'warn';
+    deleteBtn.type = 'button';
+    deleteBtn.addEventListener('click', () => {
+      removeBox(box.id);
+    });
+    actions.appendChild(focusBtn);
+    actions.appendChild(deleteBtn);
+    head.appendChild(actions);
+    item.appendChild(head);
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.placeholder = 'Label';
+    input.value = box.label || '';
+    input.dataset.boxId = box.id;
+    input.addEventListener('focus', () => {
+      activeBoxId = box.id;
+      renderBoxes();
+    });
+    input.addEventListener('input', (e) => {
+      box.label = e.target.value;
+      renderBoxes();
+      saveBoxDraft();
+    });
+    item.appendChild(input);
+    frag.appendChild(item);
+  });
+  boxList.appendChild(frag);
+}
+
+function focusBoxInput(boxId){
+  const input = boxList.querySelector(`input[data-box-id="${boxId}"]`);
+  if (input) {
+    input.focus();
+    input.select();
+  }
+}
+
+function removeBox(boxId){
+  currentBoxes = currentBoxes.filter(b => b.id !== boxId);
+  if (activeBoxId === boxId) activeBoxId = null;
+  if (!currentBoxes.length) {
+    btnClear.disabled = true;
+  }
+  renderBoxList();
+  renderBoxes();
+  saveBoxDraft();
+}
+
+btnClear.addEventListener('click', () => {
+  if (!currentBoxes.length) return;
+  if (!confirm('Remove all boxes for this image?')) return;
+  currentBoxes = [];
+  activeBoxId = null;
+  renderBoxList();
+  renderBoxes();
+  saveBoxDraft();
+});
+
+btnPrev.addEventListener('click', () => {
+  if (currentIndex > 0) selectImage(currentIndex - 1);
+});
+btnNext.addEventListener('click', () => {
+  if (currentIndex < projectImages.length - 1) selectImage(currentIndex + 1);
+});
+
+btnSave.addEventListener('click', saveLabels);
+
+async function saveLabels(){
+  if (!currentProjectId || currentIndex < 0) return;
+  if (!imageNaturalWidth || !imageNaturalHeight) {
+    alert('Wait for the image to load before saving.');
+    return;
+  }
+  for (const box of currentBoxes) {
+    if (!box.label || !box.label.trim()) {
+      alert('Every box needs a label. Please fill them in.');
+      return;
+    }
+  }
+  btnSave.disabled = true;
+  btnSave.textContent = 'Saving…';
+  const image = projectImages[currentIndex];
+  const payload = {
+    image_width: imageNaturalWidth,
+    image_height: imageNaturalHeight,
+    boxes: currentBoxes.map(box => ({
+      id: box.id,
+      label: box.label.trim(),
+      x: box.x,
+      y: box.y,
+      width: box.width,
+      height: box.height,
+    })),
+  };
+  try{
+    const url = `${API_BASE}/projects/${encodeURIComponent(currentProjectId)}/labels/${encodeURIComponent(image.filename)}`;
+    const res = await fetch(url, {
+      method:'PUT',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || res.statusText);
+    projectLabels.set(image.filename, data);
+    currentBoxes = (data.boxes || []).map(box => ({
+      id: box.id || makeBoxId(),
+      label: box.label || '',
+      x: box.x ?? 0,
+      y: box.y ?? 0,
+      width: box.width ?? 0,
+      height: box.height ?? 0,
+    }));
+    activeBoxId = null;
+    await fetchProjectLabels(currentProjectId);
+    renderClassChips();
+    updateImageUI();
+    renderBoxList();
+    renderBoxes();
+    alert('Labels saved.');
+  }catch(err){
+    console.error(err);
+    alert('Failed to save labels: ' + errorMessage(err));
+  }finally{
+    btnSave.disabled = false;
+    btnSave.textContent = 'Save labels';
+  }
+}
+
+function saveBoxDraft(){
+  // recompute classes after change
+  const labels = new Set(projectClasses);
+  currentBoxes.forEach(b => {
+    if (b.label && b.label.trim()) labels.add(b.label.trim());
+  });
+  projectClasses = Array.from(labels).sort();
+  renderClassChips();
+}
+
+function updateTrainingUI(){
+  if (!projectMeta) {
+    trainHint.textContent = 'Select a project to see training options.';
+    btnStartTrain.disabled = true;
+    trainStatus.textContent = '—';
+    return;
+  }
+  trainHint.textContent = `Mode: ${projectMeta.training_mode}.`;
+  btnStartTrain.disabled = false;
+  trainStatus.textContent = 'Ready';
+}
+
+btnStartTrain.addEventListener('click', async () => {
+  if (!currentProjectId || !projectMeta) return;
+  const mode = (projectMeta.training_mode || '').toLowerCase();
+  const baseId = baseModelSelect.value.trim();
+  if (mode === 'finetune' && !baseId) {
+    alert('Pick a base model for fine-tune projects.');
+    return;
+  }
+  const payload = {
+    img_size: Number(trainImgSize.value || 256),
+    epochs: Number(trainEpochs.value || 20),
+    lr: Number(trainLr.value || 0.0001),
+  };
+  if (baseId) payload.base_model_id = baseId;
+  btnStartTrain.disabled = true;
+  trainStatus.textContent = 'Submitting job…';
+  try{
+    const res = await fetch(`${API_BASE}/projects/${encodeURIComponent(currentProjectId)}/train`, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || res.statusText);
+    trainStatus.textContent = `Job started: ${data.job_id}`;
+    alert(`Training job started: ${data.job_id}`);
+  }catch(err){
+    console.error(err);
+    trainStatus.textContent = 'Failed to submit job';
+    alert('Failed to start training: ' + errorMessage(err));
+  }finally{
+    btnStartTrain.disabled = false;
+  }
+});
+
+projectSelect.addEventListener('change', onProjectChange);
+
+window.addEventListener('keydown', (e) => {
+  if (e.target && e.target.tagName === 'INPUT') return;
+  if (e.key === 'ArrowRight') {
+    btnNext.click();
+  } else if (e.key === 'ArrowLeft') {
+    btnPrev.click();
+  }
+});
+
+loadProjects().then(() => {
+  const params = new URLSearchParams(window.location.search);
+  const pid = params.get('projectId');
+  if (pid) {
+    projectSelect.value = pid;
+    onProjectChange();
+  }
+});
+</script>
+</body>
+</html>

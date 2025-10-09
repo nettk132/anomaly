@@ -1,5 +1,6 @@
 # app/services/training.py
 from __future__ import annotations
+import logging
 import time, json, yaml
 from pathlib import Path
 from typing import Optional
@@ -8,10 +9,18 @@ import numpy as np
 import torch, torch.nn as nn
 import torch.nn.functional as F
 
+from dataclasses import dataclass
+
+from safetensors.torch import load_file as load_safetensors
+
 from ..models.autoencoder import ConvAE, build_autoencoder
 from .scoring import compute_anomaly_score
 from .dataset import make_loaders
-from ..config import MODELS_DIR, PROJECTS_DIR, SETTINGS
+from ..config import MODELS_DIR, PROJECTS_DIR, TMP_DIR, SETTINGS
+from ..utils import PathTraversalError, safe_join, validate_slug
+
+
+logger = logging.getLogger(__name__)
 
 # (optional) อัปเดต meta ของโปรเจกต์ ถ้ามีไฟล์ services/projects.py แล้ว
 try:
@@ -52,21 +61,147 @@ def _robust_threshold(errs: np.ndarray) -> float:
     return float(max(p995, robust))
 
 
-def resolve_model_checkpoint(model_id: str) -> tuple[Path, Optional[str]]:
-    scene_path = MODELS_DIR / model_id / "model.pt"
-    if scene_path.exists():
-        return scene_path, None
+@dataclass
+class CheckpointRef:
+    path: Path
+    project_id: Optional[str]
+    source: str  # "internal" or "import"
+    format: str  # "safetensors" or "pt"
+
+
+def resolve_model_checkpoint(model_id: str) -> CheckpointRef:
+    validate_slug(model_id, name="model_id")
+
+    for ext in ("model.safetensors", "model.pt"):
+        try:
+            path_candidate = safe_join(MODELS_DIR, model_id, ext)
+        except (FileNotFoundError, PathTraversalError):
+            continue
+        if path_candidate.exists():
+            return CheckpointRef(
+                path=path_candidate,
+                project_id=None,
+                source="internal",
+                format="safetensors" if ext.endswith(".safetensors") else "pt",
+            )
+
     if PROJECTS_DIR.exists():
         for proj_dir in PROJECTS_DIR.iterdir():
             if not proj_dir.is_dir():
                 continue
-            candidate = proj_dir / "models" / model_id / "model.pt"
-            if candidate.exists():
-                return candidate, proj_dir.name
-            imports_candidate = proj_dir / "imports" / model_id / "model.pt"
-            if imports_candidate.exists():
-                return imports_candidate, proj_dir.name
+            models_root = proj_dir / "models"
+            if models_root.is_dir():
+                for ext in ("model.safetensors", "model.pt"):
+                    try:
+                        candidate = safe_join(models_root, model_id, ext)
+                    except (FileNotFoundError, PathTraversalError):
+                        continue
+                    if candidate.exists():
+                        return CheckpointRef(
+                            path=candidate,
+                            project_id=proj_dir.name,
+                            source="internal",
+                            format="safetensors" if ext.endswith(".safetensors") else "pt",
+                        )
+            imports_root = proj_dir / "imports"
+            if imports_root.is_dir():
+                try:
+                    candidate = safe_join(imports_root, model_id, "model.safetensors")
+                except (FileNotFoundError, PathTraversalError):
+                    pass
+                else:
+                    if candidate.exists():
+                        return CheckpointRef(
+                            path=candidate,
+                            project_id=proj_dir.name,
+                            source="import",
+                            format="safetensors",
+                        )
     raise FileNotFoundError(f"base model {model_id} not found")
+
+
+    if PROJECTS_DIR.exists():
+        for proj_dir in PROJECTS_DIR.iterdir():
+            if not proj_dir.is_dir():
+                continue
+            models_root = proj_dir / "models"
+            if models_root.is_dir():
+                for ext in ("model.safetensors", "model.pt"):
+                    try:
+                        candidate = safe_join(models_root, model_id, ext)
+                        return CheckpointRef(
+                            path=candidate,
+                            project_id=proj_dir.name,
+                            source="internal",
+                            format="safetensors" if ext.endswith(".safetensors") else "pt",
+                        )
+                    except (FileNotFoundError, PathTraversalError):
+                        continue
+            imports_root = proj_dir / "imports"
+            if imports_root.is_dir():
+                try:
+                    candidate = safe_join(imports_root, model_id, "model.safetensors")
+                    return CheckpointRef(
+                        path=candidate,
+                        project_id=proj_dir.name,
+                        source="import",
+                        format="safetensors",
+                    )
+                except (FileNotFoundError, PathTraversalError):
+                    pass
+    raise FileNotFoundError(f"base model {model_id} not found")
+
+
+def _load_checkpoint_state(ref: CheckpointRef, *, map_location: str = "cpu") -> dict:
+    if ref.format == "safetensors":
+        return load_safetensors(ref.path, device=map_location)
+    return torch.load(ref.path, map_location=map_location)
+
+
+def _log_sandbox_status(job) -> None:
+    cmd = SETTINGS.training.sandbox_command
+    if cmd:
+        logger.info("Training job %s using sandbox command: %s", job.id, cmd)
+    else:
+        logger.warning(
+            "Training job %s running without sandbox command; configure training.sandbox_command for isolation",
+            job.id,
+        )
+
+
+def _await_training_approval(job) -> None:
+    if not SETTINGS.training.require_approval:
+        return
+    approval_dir = TMP_DIR / "approvals" / "training"
+    approval_dir.mkdir(parents=True, exist_ok=True)
+    approved_path = approval_dir / f"{job.id}.approved"
+    pending_path = approval_dir / f"{job.id}.pending"
+
+    if approved_path.exists():
+        approved_path.unlink(missing_ok=True)
+        return
+
+    if not pending_path.exists():
+        payload = {
+            "job_id": job.id,
+            "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "detail": job.detail,
+        }
+        pending_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        logger.warning(
+            "Training job %s awaiting approval. Approve by creating %s",
+            job.id,
+            approved_path,
+        )
+
+    job.status = "waiting_approval"
+    job.detail = "Awaiting manual approval"
+    while not approved_path.exists():
+        time.sleep(2)
+    approved_path.unlink(missing_ok=True)
+    pending_path.unlink(missing_ok=True)
+    job.status = "running"
+    job.detail = "Approved; starting training"
 
 
 # ============================================================
@@ -77,6 +212,9 @@ def train_job(job, scene_id: str, raw_dir: Path, img_size: int, epochs: int, lr:
     เทรน ConvAE + SSIM, EarlyStopping, AMP, Gradient Clipping
     เซฟเวทที่ดีที่สุดบน val และคาลิเบรต threshold แบบ robust (โหมด scene)
     """
+    validate_slug(scene_id, name="scene_id")
+    _await_training_approval(job)
+    _log_sandbox_status(job)
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
     # DataLoader (อินพุตควรอยู่ช่วง [0,1])
@@ -172,7 +310,8 @@ def train_job(job, scene_id: str, raw_dir: Path, img_size: int, epochs: int, lr:
     # ---- Save artifacts (scene mode) ----
     ts = time.strftime('%Y%m%d-%H%M%S')
     model_id = f'{scene_id}-{ts}'
-    out_dir = MODELS_DIR / model_id
+    model_id = validate_slug(model_id, name="model_id")
+    out_dir = safe_join(MODELS_DIR, model_id, must_exist=False)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     torch.save(model.state_dict(), out_dir / 'model.pt')
@@ -217,6 +356,11 @@ def train_job(job, scene_id: str, raw_dir: Path, img_size: int, epochs: int, lr:
 def train_job_project(job, project_id: str, raw_dir: Path, img_size: int, epochs: int, lr: float,
                       training_mode: str = "anomaly", base_model_id: Optional[str] = None):
     """Train autoencoder for a project, with optional fine-tune mode."""
+    validate_slug(project_id, name="project_id")
+    if base_model_id:
+        validate_slug(base_model_id, name="base_model_id")
+    _await_training_approval(job)
+    _log_sandbox_status(job)
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     train_loader, val_loader, _ = make_loaders(raw_dir, img_size=img_size)
 
@@ -231,8 +375,9 @@ def train_job_project(job, project_id: str, raw_dir: Path, img_size: int, epochs
     if mode == 'finetune':
         if not base_model_id:
             raise ValueError('base_model_id is required for finetune training')
-        base_path, base_origin = resolve_model_checkpoint(base_model_id)
-        state = torch.load(base_path, map_location='cpu')
+        checkpoint = resolve_model_checkpoint(base_model_id)
+        base_origin = checkpoint.project_id
+        state = _load_checkpoint_state(checkpoint, map_location='cpu')
         try:
             model = build_autoencoder(state)
             missing_keys = []
@@ -246,6 +391,8 @@ def train_job_project(job, project_id: str, raw_dir: Path, img_size: int, epochs
         detail_parts = [f"fine-tune from {base_model_id}"]
         if base_origin:
             detail_parts.append(f"(origin: {base_origin})")
+        if checkpoint.format == "safetensors":
+            detail_parts.append("[safetensors]")
         if missing_keys or unexpected_keys:
             detail_parts.append(f"(missing={len(missing_keys)}, unexpected={len(unexpected_keys)})")
         job.detail = ' '.join(detail_parts)
@@ -337,7 +484,8 @@ def train_job_project(job, project_id: str, raw_dir: Path, img_size: int, epochs
 
     ts = time.strftime('%Y%m%d-%H%M%S')
     model_id = f'{project_id}-{ts}'
-    out_dir = PROJECTS_DIR / project_id / 'models' / model_id
+    model_id = validate_slug(model_id, name="model_id")
+    out_dir = safe_join(PROJECTS_DIR, project_id, 'models', model_id, must_exist=False)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     torch.save(model.state_dict(), out_dir / 'model.pt')

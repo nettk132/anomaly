@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "anomaly-backend"
+version = "0.1.0"
+description = "Anomaly detection backend"
+readme = "README.md"
+authors = [{ name = "Anomaly" }]
+requires-python = ">=3.10"
+dependencies = []
+
+[tool.setuptools]
+package-dir = {"" = ""}
+packages = ["app"]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+pythonpath = ["."]

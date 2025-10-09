@@ -90,7 +90,7 @@
     </div>
     <div class="header-actions">
       <div class="nav-links">
-        <a class="nav-btn" href="/ui/projects.html">← Back to project list</a>
+        <a class="nav-btn" href="/ui/projects">← Back to project list</a>
         <a class="nav-btn" href="/ui/models.html">Browse models</a>
       </div>
       <div class="small-note">Upload baseline images → train → download <code>model.pt</code> → test new images</div>
@@ -357,12 +357,19 @@ async function applyTrainingModeUI(mode){
         baseModelInput.value = projectMeta.last_model_id;
       }
     }
-  } else {
-    trainingModeInfo.textContent = 'Mode: Anomaly detection';
+    return;
+  }
+  if (normalized === 'yolo') {
+    trainingModeInfo.textContent = 'Mode: YOLO object detection';
     if (baseModelWrap) baseModelWrap.style.display = 'none';
     if (baseModelHelper) baseModelHelper.style.display = 'none';
     if (baseModelInput) baseModelInput.value = '';
+    return;
   }
+  trainingModeInfo.textContent = 'Mode: Anomaly detection';
+  if (baseModelWrap) baseModelWrap.style.display = 'none';
+  if (baseModelHelper) baseModelHelper.style.display = 'none';
+  if (baseModelInput) baseModelInput.value = '';
 }
 
 async function loadProjectMeta(){
@@ -377,6 +384,11 @@ async function loadProjectMeta(){
     const mode = (meta.training_mode || 'anomaly').toLowerCase();
     if (mode === 'finetune') {
       const target = `/ui/fine_tune.html?projectId=${encodeURIComponent(projectId)}`;
+      window.location.replace(target);
+      return;
+    }
+    if (mode === 'yolo') {
+      const target = `/ui/yolo.html?projectId=${encodeURIComponent(projectId)}`;
       window.location.replace(target);
       return;
     }
@@ -638,6 +650,10 @@ async function startTrain(){
         return;
       }
       payload.base_model_id = baseId;
+    } else if (mode === 'yolo') {
+      alert('Use the YOLO training page for this project.');
+      window.location.href = `/ui/yolo.html?projectId=${encodeURIComponent(projectId)}`;
+      return;
     }
     trainMsg.textContent = 'Submitting training job…';
     res = await fetch(`${API_BASE}/projects/${encodeURIComponent(projectId)}/train`, {
@@ -790,7 +806,7 @@ window.addEventListener('load', async ()=>{
 });
 
 const back = document.getElementById('btnBack');
-if (back) back.onclick = () => { window.location.href = '/ui/projects.html'; };
+if (back) back.onclick = () => { window.location.href = '/ui/projects'; };
   </script>
 </body>
 </html>

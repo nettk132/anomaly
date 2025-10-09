@@ -175,7 +175,7 @@
     const params = new URLSearchParams(location.search);
     const projectId = params.get('projectId');
     if (!projectId) {
-      window.location.replace('/ui/projects.html');
+      window.location.replace('/ui/projects');
     }
 
     const el = (id) => document.getElementById(id);
@@ -352,8 +352,10 @@
         const res = await fetch(`${API_BASE}/projects/${encodeURIComponent(projectId)}`);
         if (!res.ok) throw new Error(await res.text());
         const meta = await res.json();
-        if ((meta.training_mode || 'anomaly').toLowerCase() !== 'finetune') {
-          window.location.replace(`/ui/index.html?projectId=${encodeURIComponent(projectId)}`);
+        const mode = (meta.training_mode || 'anomaly').toLowerCase();
+        if (mode !== 'finetune') {
+          const target = mode === 'yolo' ? '/ui/yolo.html' : '/ui/index.html';
+          window.location.replace(`${target}?projectId=${encodeURIComponent(projectId)}`);
           return;
         }
         projectMeta = meta;
@@ -555,7 +557,7 @@
     btnTrain.addEventListener('click', startTrain);
     btnPoll.addEventListener('click', pollStatus);
     btnTest.addEventListener('click', runTest);
-    btnBack.addEventListener('click', () => window.location.href = '/ui/projects.html');
+    btnBack.addEventListener('click', () => window.location.href = '/ui/projects');
 
     window.addEventListener('load', async () => {
       await fetchProjectMeta();

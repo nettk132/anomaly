@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <link rel="icon" href="/ui/favicon.ico?v=1">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>YOLO Training - Project Workspace</title>
+  <style>
+    :root { --bg:#0f1115; --panel:#171a21; --muted:#7f8aa3; --accent:#4ad6b8; --danger:#ff5d5d; --ok:#74d680; }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:#e9eef7;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,"Noto Sans",sans-serif;line-height:1.6}
+    a{color:inherit;text-decoration:none}
+
+    .app-header{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 24px;border-bottom:1px solid #222;background:linear-gradient(180deg,rgba(19,22,30,0.95),rgba(19,22,30,0.6));position:sticky;top:0;z-index:20}
+    .header-main{display:flex;flex-direction:column;gap:4px}
+    .header-main h1{margin:0;font-size:22px}
+    .header-main .muted{color:var(--muted);font-size:13px}
+    .header-actions{display:flex;gap:8px;flex-wrap:wrap}
+    .nav-btn{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:10px;border:1px solid rgba(74,214,184,0.35);background:rgba(74,214,184,0.12);color:var(--accent);font-size:13px;font-weight:600;cursor:pointer;transition:background .2s ease, transform .2s ease}
+    .nav-btn:hover{background:rgba(74,214,184,0.24);transform:translateY(-1px)}
+
+    .page{padding:20px 24px;display:grid;gap:20px}
+    .info-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}
+    .info-card{background:var(--panel);border:1px solid #1f2330;border-radius:14px;padding:16px 18px;box-shadow:0 12px 24px rgba(0,0,0,0.2);display:grid;gap:10px}
+    .info-card h3{margin:0;font-size:16px}
+    .summary-list{list-style:none;margin:0;padding:0;display:grid;gap:6px;font-size:13px}
+    .summary-list li{display:flex;justify-content:space-between;gap:10px;padding:8px 10px;border-radius:10px;background:rgba(255,255,255,0.04)}
+    .summary-label{color:var(--muted);font-size:12px}
+
+    .wrap{display:grid;grid-template-columns:minmax(320px,360px) 1fr;gap:16px;align-items:start}
+    @media (max-width:1080px){ .wrap{grid-template-columns:1fr;} }
+    .card{background:var(--panel);border:1px solid #1f2330;border-radius:14px;padding:16px 18px;box-shadow:0 16px 28px rgba(0,0,0,0.2);display:grid;gap:14px}
+    .card h3{margin:0;font-size:16px}
+    .muted{color:var(--muted);font-size:12px}
+
+    .drop{border:2px dashed #3a4254;border-radius:12px;padding:18px;text-align:center;background:#0e1118;color:#9ea7c0;font-size:13px}
+    .drop strong{color:#d2daf5}
+    .controls{display:grid;gap:10px}
+    label{font-size:13px;color:#d4d9e9}
+    input[type=text],input[type=number],select{width:100%;padding:8px 10px;border-radius:10px;border:1px solid #333;background:#0e1016;color:#e9eef7;font-size:14px}
+    button{padding:9px 14px;border-radius:10px;border:1px solid #2a2f3a;background:#111520;color:#e9eef7;cursor:pointer;font-size:13px;font-weight:500;transition:transform 0.1s ease,background 0.2s ease}
+    button.primary{background:var(--accent);color:#061014;border-color:#2b8f80;font-weight:600}
+    button.danger{background:rgba(255,93,93,0.18);color:#ffcfcf;border-color:rgba(255,93,93,0.4)}
+    button:hover:not(:disabled){transform:translateY(-1px)}
+    button:disabled{opacity:.55;cursor:not-allowed;transform:none}
+
+    .grid-two{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px}
+    .job-status{display:grid;gap:8px;font-size:13px}
+    progress{width:100%;height:10px;border-radius:5px}
+
+    .results{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;max-height:420px;overflow:auto}
+    .result{background:#0f131c;border:1px solid #2a3140;border-radius:14px;overflow:hidden;display:flex;flex-direction:column}
+    .result img{width:100%;height:160px;object-fit:cover;background:#04060a}
+    .result .meta{padding:12px;display:grid;gap:6px;font-size:12px}
+    .badge{display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:999px;font-size:11px;font-weight:600;border:1px solid rgba(255,255,255,0.15)}
+    .badge.ok{color:var(--ok);border-color:rgba(116,214,128,0.4);background:rgba(116,214,128,0.12)}
+    .badge.warn{color:#ffd27f;border-color:rgba(255,210,127,0.4);background:rgba(255,210,127,0.12)}
+    .det-list{list-style:none;margin:0;padding:0;display:grid;gap:4px}
+    .det-list li{background:rgba(255,255,255,0.04);padding:4px 6px;border-radius:6px}
+
+    .note{font-size:12px;color:#a8afc6}
+  </style>
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-main">
+      <h1 id="title">YOLO Training</h1>
+      <div class="muted" id="subtitle">Loading project…</div>
+    </div>
+    <div class="header-actions">
+      <button class="nav-btn" id="btnBack">⬅ Projects</button>
+      <button class="nav-btn" id="btnOpenAnomaly">🧪 Anomaly page</button>
+    </div>
+  </header>
+
+  <main class="page">
+    <section class="info-grid">
+      <div class="info-card">
+        <h3>Project summary</h3>
+        <ul class="summary-list">
+          <li><span class="summary-label">Project</span><span id="summaryProject">-</span></li>
+          <li><span class="summary-label">Dataset</span><span id="summaryDataset">-</span></li>
+          <li><span class="summary-label">Classes</span><span id="summaryClasses">-</span></li>
+          <li><span class="summary-label">Latest model</span><span id="summaryModel">-</span></li>
+        </ul>
+      </div>
+      <div class="info-card">
+        <h3>Job status</h3>
+        <div class="job-status">
+          <div>Status: <strong id="jobStatus">-</strong></div>
+          <progress id="jobProgress" value="0" max="1"></progress>
+          <div>Job ID: <span id="jobId">-</span></div>
+          <div>Model ID: <span id="modelId">-</span></div>
+          <div class="controls">
+            <a id="downloadModel" href="#" style="display:none" class="nav-btn">⬇ Download model</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="wrap">
+      <div class="card" id="datasetCard">
+        <h3>1. Dataset upload</h3>
+        <div class="muted">Upload a ZIP containing <code>train/images</code>, <code>train/labels</code> and optional <code>val/</code> folders. <code>data.yaml</code> and <code>names.txt</code> are honoured if present.</div>
+        <div class="drop" id="datasetDrop">
+          <strong>Drop dataset.zip here</strong><br>
+          or
+          <input type="file" id="datasetFile" accept=".zip" style="margin-top:8px">
+        </div>
+        <div class="controls">
+          <button class="primary" id="btnUploadDataset">Upload dataset</button>
+          <button class="danger" id="btnClearDataset">Remove dataset</button>
+          <button id="btnRefreshDataset">Refresh summary</button>
+        </div>
+        <div id="datasetInfo" class="muted">Dataset not uploaded</div>
+      </div>
+
+      <div class="card">
+        <h3>2. Training parameters</h3>
+        <div class="controls">
+          <label>YOLO variant</label>
+          <select id="modelVariant">
+            <option value="yolov8n.pt">yolov8n.pt (nano)</option>
+            <option value="yolov8s.pt">yolov8s.pt (small)</option>
+            <option value="yolov8m.pt">yolov8m.pt (medium)</option>
+            <option value="yolov8l.pt">yolov8l.pt (large)</option>
+          </select>
+          <div class="grid-two">
+            <div>
+              <label>Epochs</label>
+              <input type="number" id="epochs" value="50" min="1" max="500">
+            </div>
+            <div>
+              <label>Image size</label>
+              <input type="number" id="imgSize" value="640" min="64" step="32">
+            </div>
+          </div>
+          <div class="grid-two">
+            <div>
+              <label>Batch size (optional)</label>
+              <input type="number" id="batchSize" placeholder="auto" min="1">
+            </div>
+            <div>
+              <label>Initial LR (optional)</label>
+              <input type="number" id="lr0" placeholder="auto" step="0.0001">
+            </div>
+          </div>
+          <div class="grid-two">
+            <div>
+              <label>Confidence threshold</label>
+              <input type="number" id="confThresh" value="0.25" min="0" max="1" step="0.01">
+            </div>
+            <div>
+              <label>IoU threshold</label>
+              <input type="number" id="iouThresh" value="0.45" min="0" max="1" step="0.01">
+            </div>
+          </div>
+          <div class="controls">
+            <button class="primary" id="btnTrain">Start training</button>
+            <button id="btnPoll">Poll status</button>
+          </div>
+          <div class="muted" id="trainMsg">Waiting…</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h3>3. Inference playground</h3>
+      <div class="muted">Run detection using the latest trained model.</div>
+      <input type="file" id="testInput" multiple accept="image/*">
+      <div class="controls">
+        <button class="primary" id="btnTest">Run detection</button>
+        <span class="muted" id="testMsg">No runs yet.</span>
+      </div>
+      <div class="results" id="testResults"></div>
+    </section>
+  </main>
+
+  <script>
+    const API_BASE = '';
+    const params = new URLSearchParams(window.location.search);
+    const projectId = params.get('projectId');
+
+    const subtitle = document.getElementById('subtitle');
+    const summaryProject = document.getElementById('summaryProject');
+    const summaryDataset = document.getElementById('summaryDataset');
+    const summaryClasses = document.getElementById('summaryClasses');
+    const summaryModel = document.getElementById('summaryModel');
+
+    const datasetInfoEl = document.getElementById('datasetInfo');
+    const datasetFile = document.getElementById('datasetFile');
+    const btnUploadDataset = document.getElementById('btnUploadDataset');
+    const btnClearDataset = document.getElementById('btnClearDataset');
+    const btnRefreshDataset = document.getElementById('btnRefreshDataset');
+
+    const jobStatusEl = document.getElementById('jobStatus');
+    const jobProgress = document.getElementById('jobProgress');
+    const jobIdEl = document.getElementById('jobId');
+    const modelIdEl = document.getElementById('modelId');
+    const downloadLink = document.getElementById('downloadModel');
+    const trainMsg = document.getElementById('trainMsg');
+
+    const modelVariant = document.getElementById('modelVariant');
+    const epochsInput = document.getElementById('epochs');
+    const imgSizeInput = document.getElementById('imgSize');
+    const batchSizeInput = document.getElementById('batchSize');
+    const lr0Input = document.getElementById('lr0');
+    const confInput = document.getElementById('confThresh');
+    const iouInput = document.getElementById('iouThresh');
+
+    const btnTrain = document.getElementById('btnTrain');
+    const btnPoll = document.getElementById('btnPoll');
+
+    const testInput = document.getElementById('testInput');
+    const btnTest = document.getElementById('btnTest');
+    const testResults = document.getElementById('testResults');
+    const testMsg = document.getElementById('testMsg');
+
+    const btnBack = document.getElementById('btnBack');
+    const btnOpenAnomaly = document.getElementById('btnOpenAnomaly');
+
+    let projectMeta = null;
+    let datasetInfo = null;
+    let currentModelId = null;
+    let currentJobId = null;
+    let jobTimer = null;
+
+    function fmtDataset(info){
+      if (!info || !info.ready) return 'Not ready';
+      return `${info.train_images} train / ${info.val_images} val images`;
+    }
+
+    function fmtClasses(info){
+      if (!info || !info.ready || !Array.isArray(info.classes) || !info.classes.length) return '-';
+      if (info.classes.length <= 4) return info.classes.join(', ');
+      return `${info.classes.slice(0,4).join(', ')} … (${info.classes.length})`;
+    }
+
+    function updateSummary(){
+      summaryProject.textContent = projectMeta ? `${projectMeta.name}` : '-';
+      summaryDataset.textContent = fmtDataset(datasetInfo);
+      summaryClasses.textContent = fmtClasses(datasetInfo);
+      summaryModel.textContent = currentModelId || '-';
+    }
+
+    function renderDatasetInfo(){
+      if (!datasetInfo || !datasetInfo.ready){
+        datasetInfoEl.textContent = 'Dataset not uploaded yet.';
+        datasetInfoEl.classList.add('muted');
+        return;
+      }
+      const classes = fmtClasses(datasetInfo);
+      datasetInfoEl.innerHTML = `
+        <div><strong>Images:</strong> ${datasetInfo.train_images} train · ${datasetInfo.val_images} val</div>
+        <div><strong>Classes:</strong> ${classes}</div>
+        ${datasetInfo.updated_at ? `<div class="note">Updated ${datasetInfo.updated_at}</div>` : ''}
+        ${datasetInfo.yaml_path ? `<div class="note">Config: ${datasetInfo.yaml_path}</div>` : ''}
+      `;
+    }
+
+    function updateDownloadLink(){
+      if (currentModelId){
+        downloadLink.href = `${API_BASE}/projects/${encodeURIComponent(projectId)}/models/${encodeURIComponent(currentModelId)}/download`;
+        downloadLink.style.display = 'inline-flex';
+      }else{
+        downloadLink.style.display = 'none';
+      }
+    }
+
+    async function loadProjectMeta(){
+      if (!projectId) return;
+      try{
+        const res = await fetch(`${API_BASE}/projects/${encodeURIComponent(projectId)}`);
+        if (!res.ok) throw new Error(await res.text());
+        projectMeta = await res.json();
+        const mode = (projectMeta.training_mode || 'anomaly').toLowerCase();
+        if (mode !== 'yolo'){
+          const target = mode === 'finetune'
+            ? `/ui/fine_tune.html?projectId=${encodeURIComponent(projectId)}`
+            : `/ui/index.html?projectId=${encodeURIComponent(projectId)}`;
+          window.location.href = target;
+          return;
+        }
+        subtitle.textContent = `${projectMeta.name} · created ${projectMeta.created_at}`;
+        currentModelId = projectMeta.last_model_id || null;
+        updateDownloadLink();
+        updateSummary();
+      }catch(err){
+        console.error(err);
+        alert('Failed to load project: ' + err);
+      }
+    }
+
+    async function loadDataset(){
+      if (!projectId) return;
+      try{
+        const res = await fetch(`${API_BASE}/projects/${encodeURIComponent(projectId)}/yolo/dataset`);
+        if (!res.ok){
+          const text = await res.text();
+          throw new Error(text);
+        }
+        datasetInfo = await res.json();
+      }catch(err){
+        console.warn('Dataset info error', err);
+        datasetInfo = null;
+      }
+      renderDatasetInfo();
+      updateSummary();
+    }
+
+    async function uploadDataset(){
+      const file = datasetFile.files && datasetFile.files[0];
+      if (!file){
+        alert('Select a dataset ZIP file first');
+        return;
+      }
+      btnUploadDataset.disabled = true;
+      datasetInfoEl.textContent = 'Uploading…';
+      try{
+        const fd = new FormData();
+        fd.append('file', file, file.name);
+        const res = await fetch(`${API_BASE}/projects/${encodeURIComponent(projectId)}/yolo/dataset/upload`, {
+          method:'POST',
+          body: fd
+        });
+        const js = await res.json();
+        if (!res.ok) throw new Error(js.detail || res.statusText);
+        datasetInfo = js;
+        renderDatasetInfo();
+        updateSummary();
+        alert('Dataset uploaded successfully');
+      }catch(err){
+        console.error(err);
+        alert('Upload failed: ' + err.message);
+      }finally{
+        btnUploadDataset.disabled = false;
+      }
+    }
+
+    async function clearDataset(){
+      if (!confirm('Remove YOLO dataset for this project?')) return;
+      btnClearDataset.disabled = true;
+      try{
+        const res = await fetch(`${API_BASE}/projects/${encodeURIComponent(projectId)}/yolo/dataset`, { method:'DELETE' });
+        if (!res.ok){
+          const text = await res.text();
+          throw new Error(text);
+        }
+        datasetInfo = null;
+        renderDatasetInfo();
+        updateSummary();
+      }catch(err){
+        console.error(err);
+        alert('Failed to remove dataset: ' + err.message);
+      }finally{
+        btnClearDataset.disabled = false;
+      }
+    }
+
+    async function startTraining(){
+      if (!projectId) return;
+      if (!datasetInfo || !datasetInfo.ready){
+        alert('Upload a dataset before training');
+        return;
+      }
+      const payload = {
+        model_variant: modelVariant.value,
+        epochs: parseInt(epochsInput.value || '0', 10),
+        img_size: parseInt(imgSizeInput.value || '0', 10),
+        batch: batchSizeInput.value ? parseInt(batchSizeInput.value, 10) : null,
+        lr0: lr0Input.value ? parseFloat(lr0Input.value) : null,
+        conf: parseFloat(confInput.value || '0.25'),
+        iou: parseFloat(iouInput.value || '0.45'),
+      };
+      if (!Number.isFinite(payload.epochs) || payload.epochs <= 0){
+        alert('Invalid epochs value');
+        epochsInput.focus();
+        return;
+      }
+      if (!Number.isFinite(payload.img_size) || payload.img_size <= 0){
+        alert('Invalid image size');
+        imgSizeInput.focus();
+        return;
+      }
+      btnTrain.disabled = true;
+      trainMsg.textContent = 'Submitting training job…';
+      try{
+        const res = await fetch(`${API_BASE}/projects/${encodeURIComponent(projectId)}/yolo/train`, {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify(payload)
+        });
+        const js = await res.json();
+        if (!res.ok) throw new Error(js.detail || res.statusText);
+        currentJobId = js.job_id;
+        jobIdEl.textContent = currentJobId;
+        jobStatusEl.textContent = 'queued';
+        jobProgress.value = 0;
+        trainMsg.textContent = 'Job queued';
+        if (jobTimer) clearInterval(jobTimer);
+        jobTimer = setInterval(pollJobStatus, 2000);
+      }catch(err){
+        console.error(err);
+        trainMsg.textContent = 'Failed to start training';
+        alert('Training failed: ' + err.message);
+      }finally{
+        btnTrain.disabled = false;
+      }
+    }
+
+    async function pollJobStatus(){
+      if (!currentJobId) return;
+      try{
+        const res = await fetch(`${API_BASE}/jobs/${encodeURIComponent(currentJobId)}`);
+        const js = await res.json();
+        if (!res.ok) throw new Error(js.detail || res.statusText);
+        jobStatusEl.textContent = js.status || '-';
+        jobProgress.value = js.progress ?? 0;
+        if (js.model_id){
+          currentModelId = js.model_id;
+          modelIdEl.textContent = currentModelId;
+          updateDownloadLink();
+        }
+        const statusLower = (js.status || '').toLowerCase();
+        if (['finished','failed','canceled','error'].includes(statusLower)){
+          if (jobTimer) clearInterval(jobTimer);
+          await loadProjectMeta();
+          await loadDataset();
+        }
+      }catch(err){
+        console.error(err);
+      }
+    }
+
+    async function runDetection(){
+      if (!currentModelId){
+        alert('Train a model first or wait for the job to finish');
+        return;
+      }
+      const files = testInput.files ? Array.from(testInput.files) : [];
+      if (!files.length){
+        alert('Select images to test');
+        return;
+      }
+      const fd = new FormData();
+      files.forEach(f => fd.append('files', f, f.name));
+      btnTest.disabled = true;
+      testMsg.textContent = 'Running detection…';
+      try{
+        const res = await fetch(`${API_BASE}/models/${encodeURIComponent(currentModelId)}/test`, {
+          method:'POST',
+          body: fd
+        });
+        const js = await res.json();
+        if (!res.ok) throw new Error(js.detail || res.statusText);
+        renderTestResults(js.items || []);
+        testMsg.textContent = `Completed: ${js.items?.length || 0} image(s)`;
+      }catch(err){
+        console.error(err);
+        testMsg.textContent = 'Detection failed';
+        alert('Detection failed: ' + err.message);
+        testResults.innerHTML = '';
+      }finally{
+        btnTest.disabled = false;
+      }
+    }
+
+    function renderTestResults(items){
+      testResults.innerHTML = '';
+      if (!Array.isArray(items) || !items.length){
+        testResults.innerHTML = '<div class="muted">No detection results</div>';
+        return;
+      }
+      items.forEach(item => {
+        const card = document.createElement('div');
+        card.className = 'result';
+        const overlayUrl = item.overlay_url ? `${API_BASE}${item.overlay_url}` : '';
+        const imageUrl = item.image_url ? `${API_BASE}${item.image_url}` : overlayUrl;
+        const detections = Array.isArray(item.detections) ? item.detections : [];
+        const badge = detections.length ? `<span class="badge ok">${detections.length} detection(s)</span>` : '<span class="badge warn">No detections</span>';
+        card.innerHTML = `
+          <img src="${overlayUrl || imageUrl || ''}" alt="result">
+          <div class="meta">
+            <div>${badge} <strong>${item.filename || ''}</strong></div>
+            <div>score: ${(item.score ?? 0).toFixed(3)} · conf thr: ${(item.thr ?? 0).toFixed(2)}</div>
+            ${detections.length ? `<ul class="det-list">${detections.map(det => `<li>${det.label} (${(det.confidence ?? 0).toFixed(2)})</li>`).join('')}</ul>` : ''}
+            ${overlayUrl ? `<a class="nav-btn" href="${overlayUrl}" target="_blank">Open overlay</a>` : ''}
+          </div>
+        `;
+        testResults.appendChild(card);
+      });
+    }
+
+    btnUploadDataset.addEventListener('click', uploadDataset);
+    btnClearDataset.addEventListener('click', clearDataset);
+    btnRefreshDataset.addEventListener('click', loadDataset);
+    btnTrain.addEventListener('click', startTraining);
+    btnPoll.addEventListener('click', pollJobStatus);
+    btnTest.addEventListener('click', runDetection);
+
+    btnBack.addEventListener('click', () => window.location.href = '/ui/projects');
+    btnOpenAnomaly.addEventListener('click', () => {
+      const target = `/ui/index.html?projectId=${encodeURIComponent(projectId || '')}`;
+      window.location.href = target;
+    });
+
+    window.addEventListener('load', async () => {
+      if (!projectId){
+        alert('Missing projectId parameter');
+        window.location.href = '/ui/projects';
+        return;
+      }
+      await loadProjectMeta();
+      await loadDataset();
+      pollJobStatus();
+      updateSummary();
+    });
+
+    window.addEventListener('beforeunload', () => {
+      if (jobTimer) clearInterval(jobTimer);
+    });
+  </script>
+</body>
+</html>
